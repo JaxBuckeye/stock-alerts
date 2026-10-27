@@ -23,8 +23,12 @@ def env(name, default=None, required=False):
     return val
 
 
-PUSHOVER_TOKEN = env("PUSHOVER_APP_TOKEN", required=True)
-PUSHOVER_USER = env("PUSHOVER_USER_KEY", required=True)
+# Pushover is optional: leave both unset to log alerts instead of sending them.
+PUSHOVER_TOKEN = env("PUSHOVER_APP_TOKEN")
+PUSHOVER_USER = env("PUSHOVER_USER_KEY")
+if bool(PUSHOVER_TOKEN) != bool(PUSHOVER_USER):
+    sys.exit("Set both PUSHOVER_APP_TOKEN and PUSHOVER_USER_KEY, or neither")
+PUSHOVER_ON = bool(PUSHOVER_TOKEN and PUSHOVER_USER)
 FINNHUB_KEY = env("FINNHUB_API_KEY", required=True)
 SEC_UA = env("SEC_USER_AGENT", required=True)  # e.g. "Jane Doe jane@example.com"
 
@@ -96,8 +100,8 @@ http = requests.Session()
 
 # --------------------------------------------------------------- pushover
 def notify(title, message, url=None, url_title=None, priority=0, sound=None):
-    if DRY_RUN:
-        log.info("[DRY RUN] %s | %s | %s", title, message, url)
+    if DRY_RUN or not PUSHOVER_ON:
+        log.info("[%s] %s | %s | %s", "DRY RUN" if DRY_RUN else "ALERT", title, message, url)
         return True
     payload = {
         "token": PUSHOVER_TOKEN, "user": PUSHOVER_USER,
@@ -318,7 +322,9 @@ def main():
     log.info("Watching %d tickers: %s", len(WATCHLIST), ", ".join(WATCHLIST))
     log.info("Jobs: %s | move threshold %.1f%% | forms %s | dry_run=%s",
              {n: INTERVALS[n] for n in schedule}, MOVE_PCT, sorted(FORMS), DRY_RUN)
-    if not DRY_RUN:
+    if not PUSHOVER_ON:
+        log.warning("Pushover not configured: alerts will only appear in these logs")
+    if PUSHOVER_ON and not DRY_RUN:
         notify("Stock alerts started", f"Monitoring {len(WATCHLIST)} tickers.", priority=-1)
     last_prune = 0.0
     while running:

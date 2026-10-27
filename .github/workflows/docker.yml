@@ -31,6 +31,29 @@ jobs:
             type=raw,value=latest
             type=sha
 
+      # Build locally first and smoke-test startup; only publish if it passes.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: stock-alerts:test
+          cache-from: type=gha
+
+      - name: Smoke test (starts without Pushover)
+        run: |
+          COMMON="-e FINNHUB_API_KEY=ci -e SEC_USER_AGENT=ci@example.com -e WATCHLIST=AAPL \
+            -e ENABLE_NEWS=false -e ENABLE_PRICES=false -e ENABLE_HALTS=false -e ENABLE_FILINGS=false"
+          docker run -d --name smoke $COMMON stock-alerts:test
+          sleep 5
+          docker logs smoke
+          test "$(docker inspect -f '{{.State.Running}}' smoke)" = true
+          docker logs smoke 2>&1 | grep -q "Pushover not configured"
+          docker rm -f smoke
+          # Only one Pushover value set should fail fast with a clear message
+          if timeout 20 docker run --rm $COMMON -e PUSHOVER_APP_TOKEN=x stock-alerts:test; then
+            echo "expected startup to fail with only one Pushover value"; exit 1
+          fi
+
       - uses: docker/build-push-action@v6
         with:
           context: .

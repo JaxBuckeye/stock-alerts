@@ -21,6 +21,8 @@ To update after pushing new code: wait for the GitHub Action to finish, then run
 
 Test first with `DRY_RUN=true` to see alerts in the logs without sending anything.
 
+Pushover is optional: leave `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` both unset and alerts are written to the logs instead. Setting only one of them stops the app with an error.
+
 ## Behavior notes
 - First run per ticker/source "seeds" existing items silently, so you don't get a flood of old news/filings.
 - Move alerts fire once per direction per day, then again each time the move crosses the next multiple of the threshold (5%, 10%, 15%...).
