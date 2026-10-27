@@ -1,32 +1,51 @@
-# Stock Alerts → Pushover
+# Stock Alerts → Pushover / Discord / SMS
 
-Sends a Pushover push notification when, for any ticker on your watchlist:
+Alerts for every ticker on a shared watchlist that people manage from Discord.
 
 | Event | Source | Default poll |
 |---|---|---|
-| Company news | Finnhub `/company-news` | 5 min |
-| Trading halt / resumption | Nasdaq Trader halts RSS (all US exchanges) | 30 s |
-| Price move ≥ 5% vs. previous close | Finnhub `/quote` | 60 s |
-| 10-Q filed | SEC EDGAR submissions API | 5 min |
+| Company news | Finnhub | 5 min |
+| Trading halt / resumption | Nasdaq Trader halts RSS | 30 s |
+| Price move ≥ 5% vs. previous close | Finnhub | 60 s |
+| 10-Q / 8-K filings (+amendments), with 8-K item descriptions | SEC EDGAR | 5 min |
+| Earnings reminders (day before and day of) | Finnhub earnings calendar | 30 min |
+| Investor calls / events (detected in headlines and press releases) | news + company sites | with news/sites |
+| New press releases on the company's own website | auto-discovered newsroom or RSS | 15 min |
 
-## Setup
-1. Pushover: install the app, copy your **User Key**, and create an Application at pushover.net/apps/build for the **API Token**.
-2. Finnhub: get a free API key at finnhub.io (free tier = 60 calls/min).
-3. `cp .env.example .env` and fill it in.
-4. Log in to GitHub's registry once (the image is private): `docker login ghcr.io -u JaxBuckeye` with a token that has `read:packages`.
-5. `docker compose pull && docker compose up -d`
-6. `docker compose logs -f`
+## Discord commands
+- `/watch add AAPL, TSLA NVDA` – validates tickers, adds them, replies with the full list
+- `/watch remove TSLA` – removes, replies with the full list
+- `/watch list` – shows the list (🌐 = company newsroom monitored)
+- `/watch sites` – shows the news page / RSS feed monitored for every ticker
+- `/watch site AAPL` – shows the one monitored for AAPL
+- `/watch site AAPL https://www.apple.com/newsroom/` – override the monitored newsroom/RSS URL (`auto` re-detects)
 
-To update after pushing new code: wait for the GitHub Action to finish, then run step 5 again.
+### Discord bot setup
+1. discord.com/developers/applications → **New Application** → **Bot** → **Reset Token** → copy into `DISCORD_BOT_TOKEN`.
+2. **OAuth2 → URL Generator**: scopes `bot` and `applications.commands`, no extra permissions needed. Open the URL and invite it to your server.
+3. Discord **Settings → Advanced → Developer Mode**, then right-click your server → **Copy Server ID** into `DISCORD_GUILD_ID`.
+4. Optional: `DISCORD_ALLOWED_ROLE_ID` / `DISCORD_COMMAND_CHANNEL_ID` to restrict who and where.
+5. The alert *webhook* (`DISCORD_WEBHOOK_URL`) is separate from the bot. Use both.
 
-Test first with `DRY_RUN=true` to see alerts in the logs without sending anything.
+## Per-ticker channels
+Create a text channel named after a ticker (e.g. `#bolt` for BOLT) and the bot posts that ticker's news, price moves,
+filings, earnings reminders, halts, investor calls and website releases there. Give the bot **View Channel**, **Send
+Messages** and **Embed Links** in that channel. `/watch list` shows `→ #channel` for tickers that have one.
+By default alerts also still go to your general channel; set `DISCORD_TICKER_ONLY=true` to stop that for tickers with a channel.
 
-Pushover is optional: leave `PUSHOVER_APP_TOKEN` and `PUSHOVER_USER_KEY` both unset and alerts are written to the logs instead. Setting only one of them stops the app with an error.
+## Deploy
+GitHub Actions builds the image on every push to `main` and publishes it to `ghcr.io/jaxbuckeye/stock-alerts:latest`.
 
-## Behavior notes
-- First run per ticker/source "seeds" existing items silently, so you don't get a flood of old news/filings.
-- Move alerts fire once per direction per day, then again each time the move crosses the next multiple of the threshold (5%, 10%, 15%...).
-- Halts are sent at Pushover priority 1 (bypasses quiet hours); change `priority` in `app/main.py` to 2 for emergency/repeat-until-acknowledged.
-- State is in the `/data` volume (SQLite), so restarts don't duplicate alerts.
-- Rate budget: price checks use 1 Finnhub call per ticker per cycle, news another. ~25 tickers fits comfortably in the free tier at default intervals; raise the intervals for larger lists.
-- Pushover free apps allow 10,000 messages/month.
+1. `cp .env.example .env` and fill it in.
+2. `docker compose pull && docker compose up -d`
+3. `docker compose logs -f`
+
+To update after pushing new code: wait for the GitHub Action to finish, then run step 2 again.
+State lives in the `/data` volume; the container user must be able to write to it.
+
+## Notes
+- First check per ticker/source records existing items silently; only new ones alert.
+- Website monitoring reads the company's homepage (from Finnhub), finds a newsroom page and RSS feed, honors robots.txt, and checks every 15 minutes. JavaScript-rendered or bot-blocking sites may not work; set a URL with `/watch site`.
+- Investor-call detection is keyword-based (conference call, webcast, "to host", "to report results", etc.). Earnings reminders give the date and before/after-market timing; dial-in details come from the company's announcement when they publish it.
+- The same headline from news and a company site is only alerted once.
+- SMS requires Twilio; US carriers require A2P 10DLC or toll-free verification, and trial accounts only text verified numbers.
