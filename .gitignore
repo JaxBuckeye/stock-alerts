@@ -1,0 +1,13 @@
+# Secrets: keep real keys out of git (.env.example is fine)
+.env
+
+# Local state (SQLite in /data volume)
+data/
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

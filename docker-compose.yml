@@ -1,0 +1,11 @@
+services:
+  stock-alerts:
+    build: .
+    container_name: stock-alerts
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - alerts-data:/data
+
+volumes:
+  alerts-data:
