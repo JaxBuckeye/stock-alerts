@@ -1,6 +1,9 @@
 services:
   stock-alerts:
-    build: .
+    # Built by GitHub Actions on every push to main (.github/workflows/docker.yml).
+    # Update with: docker compose pull && docker compose up -d
+    image: ghcr.io/jaxbuckeye/stock-alerts:latest
+    pull_policy: always
     container_name: stock-alerts
     restart: unless-stopped
     env_file: .env

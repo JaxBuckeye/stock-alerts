@@ -13,8 +13,11 @@ Sends a Pushover push notification when, for any ticker on your watchlist:
 1. Pushover: install the app, copy your **User Key**, and create an Application at pushover.net/apps/build for the **API Token**.
 2. Finnhub: get a free API key at finnhub.io (free tier = 60 calls/min).
 3. `cp .env.example .env` and fill it in.
-4. `docker compose up -d --build`
-5. `docker compose logs -f`
+4. Log in to GitHub's registry once (the image is private): `docker login ghcr.io -u JaxBuckeye` with a token that has `read:packages`.
+5. `docker compose pull && docker compose up -d`
+6. `docker compose logs -f`
+
+To update after pushing new code: wait for the GitHub Action to finish, then run step 5 again.
 
 Test first with `DRY_RUN=true` to see alerts in the logs without sending anything.
 
