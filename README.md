@@ -8,6 +8,8 @@ Alerts for every ticker on a shared watchlist that people manage from Discord.
 | Trading halt / resumption | Nasdaq Trader halts RSS | 30 s |
 | Price move ≥ 5% vs. previous close | Finnhub | 60 s |
 | 10-Q / 8-K filings (+amendments), with 8-K item descriptions | SEC EDGAR | 5 min |
+| Form 4 insider trades (who, role, buy/sell, shares, price, holdings after) | SEC EDGAR | 5 min |
+| Schedule 13D stakes (filer, % owned, stated purpose); 13G optional | SEC EDGAR | 5 min |
 | Earnings reminders (day before and day of) | Finnhub earnings calendar | 30 min |
 | Investor calls / events (detected in headlines and press releases) | news + company sites | with news/sites |
 | New press releases on the company's own website | auto-discovered newsroom or RSS | 15 min |
@@ -48,4 +50,9 @@ State lives in the `/data` volume; the container user must be able to write to i
 - Website monitoring reads the company's homepage (from Finnhub), finds a newsroom page and RSS feed, honors robots.txt, and checks every 15 minutes. JavaScript-rendered or bot-blocking sites may not work; set a URL with `/watch site`.
 - Investor-call detection is keyword-based (conference call, webcast, "to host", "to report results", etc.). Earnings reminders give the date and before/after-market timing; dial-in details come from the company's announcement when they publish it.
 - The same headline from news and a company site is only alerted once.
+- Form 4 / 13D / 13G use their own settings (`TRACK_FORM4`, `FORM4_CODES`, `TRACK_13D`, `TRACK_13G`), not `SEC_FORMS`,
+  and their own alert kinds (`insider`, `stake`), so they are not texted unless you add them to `SMS_EVENTS`.
+  Filings where a watched company is the *filer* (it took a stake in someone else) are skipped.
+  A brand-new 13D is sent at priority 1 (Pushover high priority, Discord mention); amendments and Form 4s are normal.
+- Turning these on (or changing the form settings) records existing filings silently, so there's no flood of old ones.
 - SMS requires Twilio; US carriers require A2P 10DLC or toll-free verification, and trial accounts only text verified numbers.

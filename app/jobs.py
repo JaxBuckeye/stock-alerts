@@ -39,6 +39,13 @@ ITEMS_8K = {
     "9.01": "Financial Statements and Exhibits",
 }
 URGENT_8K_ITEMS = {"1.03", "3.01", "4.02"}
+FORM4_CODE_NAMES = {
+    "P": "Open-market buy", "S": "Open-market sale", "A": "Grant/award", "M": "Option exercise",
+    "X": "Option exercise", "O": "Option exercise", "C": "Conversion", "F": "Tax withholding", "G": "Gift",
+    "D": "Returned to issuer", "J": "Other", "W": "Inheritance", "I": "Discretionary trade", "K": "Equity swap",
+    "V": "Voluntary report", "E": "Expiration", "H": "Expiration", "L": "Small acquisition",
+    "Z": "Voting trust", "U": "Tender of shares",
+}
 CALL_RE = re.compile(
     r"(conference call|earnings call|webcast|investor day|analyst day|investor conference|fireside chat|"
     r"to host|will host|(announce|report|release)s?\b.{0,50}\b(results|earnings)|schedules?\b.{0,40}\b(call|results|earnings))",
@@ -184,8 +191,146 @@ def cik_for(sym):
     return _cik_map.get(sym)
 
 
+# ------------------------------------------------- ownership (Form 4, 13D/G)
+def _find(el, name):
+    name = name.lower()
+    return next((e for e in el.iter() if e is not el and _local(e.tag).lower() == name), None)
+
+
+def _x(el, *path):
+    """Text at a path of tag names (namespace- and case-insensitive), or ""."""
+    for name in path:
+        el = _find(el, name) if el is not None else None
+    return (el.text or "").strip() if el is not None else ""
+
+
+def _xs(el, name):
+    name = name.lower()
+    return [e for e in el.iter() if _local(e.tag).lower() == name]
+
+
+def _num(s):
+    try:
+        return float(str(s).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _shares(x):
+    return "?" if x is None else (f"{x:,.0f}" if float(x).is_integer() else f"{x:,.2f}")
+
+
+def _cik(s):
+    s = (s or "").strip()
+    return s.zfill(10) if s else ""
+
+
+def parse_form4(xml):
+    """Owners, transaction codes and a per-code summary from a Form 4 XML document."""
+    root = ET.fromstring(xml)
+    owners = []
+    for ro in _xs(root, "reportingOwner"):
+        rel = _find(ro, "reportingOwnerRelationship")
+        role = ""
+        if rel is not None:
+            role = (_x(rel, "officerTitle")
+                    or ("Director" if _x(rel, "isDirector") in ("1", "true") else "")
+                    or ("10% owner" if _x(rel, "isTenPercentOwner") in ("1", "true") else "")
+                    or _x(rel, "otherText"))
+        name = _x(ro, "rptOwnerName")
+        if name:
+            owners.append(f"{name} ({role})" if role else name)
+    groups, after = {}, None  # (code, acquired/disposed, derivative?) -> [shares, dollar value]
+    for tx in _xs(root, "nonDerivativeTransaction") + _xs(root, "derivativeTransaction"):
+        deriv = _local(tx.tag).lower() == "derivativetransaction"
+        code = _x(tx, "transactionCode").upper()
+        shares = _num(_x(tx, "transactionShares", "value")) or 0.0
+        price = _num(_x(tx, "transactionPricePerShare", "value")) or 0.0
+        ad = _x(tx, "transactionAcquiredDisposedCode", "value").upper()
+        g = groups.setdefault((code, ad, deriv), [0.0, 0.0])
+        g[0] += shares
+        g[1] += shares * price
+        if not deriv:
+            held = _num(_x(tx, "sharesOwnedFollowingTransaction", "value"))
+            after = held if held is not None else after
+    parts = []
+    for (code, ad, deriv), (sh, val) in groups.items():
+        sign = "+" if ad == "A" else "-" if ad == "D" else ""
+        part = f"{FORM4_CODE_NAMES.get(code, 'Code ' + code)}: {sign}{_shares(sh)} {'options/rights' if deriv else 'sh'}"
+        if val > 0 and sh > 0:
+            part += f" @ ~${val / sh:,.2f} ({_money(val)})"
+        parts.append(part)
+    return {"issuer": _cik(_x(root, "issuerCik")), "owners": owners,
+            "codes": {k[0] for k in groups}, "parts": parts, "after": after}
+
+
+def parse_stake(xml):
+    """Filer(s), percent of class and purpose from a Schedule 13D/13G XML document."""
+    root = ET.fromstring(xml)
+    names = list(dict.fromkeys((e.text or "").strip() for e in _xs(root, "reportingPersonName") if (e.text or "").strip()))
+    pcts = [p for p in (_num(e.text) for e in _xs(root, "percentOfClass") + _xs(root, "classPercent")) if p is not None]
+    held = [s for s in (_num(e.text) for e in _xs(root, "aggregateAmountOwned")
+                        + _xs(root, "reportingPersonBeneficiallyOwnedAggregateNumberOfShares")) if s is not None]
+    return {"issuer": _cik(_x(root, "issuerCik")), "names": names,
+            "pct": max(pcts) if pcts else None, "shares": max(held) if held else None,
+            "event": _x(root, "dateOfEvent") or _x(root, "eventDateRequiresFilingThisStatement"),
+            "purpose": re.sub(r"\s+", " ", _x(root, "transactionPurpose"))}
+
+
+def _who(names, limit=2):
+    return (", ".join(names[:limit]) + (f" +{len(names) - limit} more" if len(names) > limit else "")) if names else ""
+
+
+def ownership_alert(sym, cik, form, acc, fdate, doc):
+    """(title, message, kind, priority) for a Form 4 / 13D / 13G, or None to skip it silently.
+
+    These filings are listed under both the subject company and the filer, so a filing where the
+    watched company is the *filer* (e.g. it bought a stake in someone else) is skipped.
+    """
+    info = None
+    if doc.lower().endswith(".xml"):
+        raw = doc.split("/", 1)[1] if doc.startswith("xsl") and "/" in doc else doc  # strip the HTML-render folder
+        try:
+            r = http.get(f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{raw}",
+                         headers={"User-Agent": c.SEC_UA}, timeout=20)
+            r.raise_for_status()
+            info = (parse_form4 if form in c.FORMS_4 else parse_stake)(r.content)
+        except (requests.RequestException, ET.ParseError) as e:
+            log.warning("could not read %s %s for %s: %s", form, acc, sym, e)
+        time.sleep(0.2)  # SEC fair access
+    amended = form.endswith("/A")
+    if info and info["issuer"] and info["issuer"] != cik:
+        return None
+    if form in c.FORMS_4:
+        if info and c.FORM4_CODES and not (info["codes"] & c.FORM4_CODES):
+            return None
+        if not info:
+            return f"{sym} insider filing (Form {form})", f"An insider filed Form {form} on {fdate}.", "insider", 0
+        head = "insider BUY" if "P" in info["codes"] else "insider sale" if "S" in info["codes"] else "insider filing"
+        msg = "; ".join(info["parts"]) or "No transactions reported."
+        if info["after"] is not None:
+            msg += f". Owns {_shares(info['after'])} sh after."
+        msg += f" Form {form} filed {fdate}."
+        return f"{sym} {head}{' (amended)' if amended else ''}: {_who(info['owners']) or 'insider'}", msg, "insider", 0
+    label = "13D" if form in c.FORMS_13D else "13G"
+    if not info:
+        return f"{sym} {label} {'amendment' if amended else 'filed'}", f"A {form} (5%+ ownership) was filed on {fdate}.", "stake", 0
+    who = _who(info["names"]) or "An investor"
+    pct = f"{info['pct']:g}%" if info["pct"] is not None else "a 5%+ stake"
+    msg = f"{who} reports {pct}"
+    if info["shares"] is not None:
+        msg += f" ({_shares(info['shares'])} sh)"
+    msg += f" of {sym}" + (f" as of {info['event']}" if info["event"] else "") + f". {form} filed {fdate}."
+    if info["purpose"] and label == "13D":
+        msg += f" Purpose: {info['purpose'][:500]}" + ("..." if len(info["purpose"]) > 500 else "")
+    # a brand-new 13D (activist-style stake) is the one ownership filing worth a ping
+    priority = 1 if label == "13D" and not amended else 0
+    return f"{sym} {label}{' amendment' if amended else ''}: {who} {pct}", msg, "stake", priority
+
+
 def check_filings():
-    forms_sig = hashlib.md5(",".join(sorted(c.FORMS)).encode()).hexdigest()[:6]
+    all_forms = c.FORMS | c.OWNERSHIP_FORMS
+    forms_sig = hashlib.md5(",".join(sorted(all_forms)).encode()).hexdigest()[:6]
     for sym in state.tickers():
         try:
             cik = cik_for(sym)
@@ -203,13 +348,24 @@ def check_filings():
                 rec["form"], rec["accessionNumber"], rec["filingDate"], rec["primaryDocument"],
                 rec.get("reportDate") or [""] * n, rec.get("items") or [""] * n,
             ):
-                if form.upper() not in c.FORMS:
+                form = form.upper()
+                if form not in all_forms:
                     continue
                 key = f"filing:{sym}:{acc}"
                 if state.has(key):
                     continue
                 if first_run:
                     state.mark(key)
+                    continue
+                link = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{doc}"
+                if form in c.OWNERSHIP_FORMS and form not in c.FORMS:
+                    alert = ownership_alert(sym, cik, form, acc, fdate, doc)
+                    if alert is None:
+                        state.mark(key)
+                        continue
+                    title, msg, kind, priority = alert
+                    if notify(title, msg, url=link, url_title="View filing", priority=priority, kind=kind, sym=sym):
+                        state.mark(key)
                     continue
                 codes = [x.strip() for x in (items or "").split(",") if x.strip()]
                 detail = "; ".join(f"{x} {ITEMS_8K.get(x, '')}".strip() for x in codes)
@@ -218,7 +374,6 @@ def check_filings():
                     msg += f" Period ending {period}."
                 if detail:
                     msg += f" Items: {detail}"
-                link = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{doc}"
                 urgent = bool(URGENT_8K_ITEMS & set(codes))
                 if notify(f"{sym} filed {form}", msg, url=link, url_title="View filing",
                           priority=1 if urgent else 0, kind="filing", sym=sym):

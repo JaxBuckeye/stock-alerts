@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13D" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13D/A</submissionType>
+    <previousAccessionNumber>0001361570-26-000022</previousAccessionNumber>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <cik>0001361570</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPageHeader>
+      <amendmentNo>1</amendmentNo>
+      <securitiesClassTitle>COMMON STOCK</securitiesClassTitle>
+      <dateOfEvent>10/26/2026</dateOfEvent>
+      <previouslyFiledFlag>false</previouslyFiledFlag>
+      <issuerInfo>
+        <issuerCIK>0001707753</issuerCIK>
+        <issuerCusips>
+          <issuerCusipNumber>N14506104</issuerCusipNumber>
+        </issuerCusips>
+        <issuerName>Elastic N.V.</issuerName>
+        <address>
+          <com:street1>33 NEW MONTGOMERY ST.</com:street1>
+          <com:street2>33 NEW MONTGOMERY ST.</com:street2>
+          <com:city>SAN FRANCISCO</com:city>
+          <com:stateOrCountry>CA</com:stateOrCountry>
+          <com:zipCode>94105</com:zipCode>
+        </address>
+      </issuerInfo>
+      <authorizedPersons>
+        <notificationInfo>
+          <personName>Mathieu Cornu</personName>
+          <personPhoneNum>0041583234506</personPhoneNum>
+          <personAddress>
+            <com:street1>60 ROUTE DE ACACIAS</com:street1>
+            <com:city>GENEVA 73</com:city>
+            <com:stateOrCountry>V8</com:stateOrCountry>
+            <com:zipCode>1211</com:zipCode>
+          </personAddress>
+        </notificationInfo>
+      </authorizedPersons>
+    </coverPageHeader>
+    <reportingPersons>
+      <reportingPersonInfo>
+        <reportingPersonCIK>0001361570</reportingPersonCIK>
+        <reportingPersonNoCIK>N</reportingPersonNoCIK>
+        <reportingPersonName>PICTET ASSET MANAGEMENT SA</reportingPersonName>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>V8</citizenshipOrOrganization>
+        <soleVotingPower>5202209.00</soleVotingPower>
+        <sharedVotingPower>0.00</sharedVotingPower>
+        <soleDispositivePower>5217779.00</soleDispositivePower>
+        <sharedDispositivePower>0.00</sharedDispositivePower>
+        <aggregateAmountOwned>5217779.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>4.9</percentOfClass>
+        <typeOfReportingPerson>IA</typeOfReportingPerson>
+      </reportingPersonInfo>
+    </reportingPersons>
+    <items1To7>
+      <item1>
+        <securityTitle>COMMON STOCK</securityTitle>
+        <issuerName>Elastic N.V.</issuerName>
+        <issuerPrincipalAddress>
+          <com:street1>33 NEW MONTGOMERY ST.</com:street1>
+          <com:street2>33 NEW MONTGOMERY ST.</com:street2>
+          <com:city>SAN FRANCISCO</com:city>
+          <com:stateOrCountry>CA</com:stateOrCountry>
+          <com:zipCode>94105</com:zipCode>
+        </issuerPrincipalAddress>
+      </item1>
+      <item2>
+        <filingPersonName>Pictet Asset Management SA</filingPersonName>
+        <principalBusinessAddress>60 ROUTE DES ACACIAS
+GENEVA 73 1211
+SWITZERLAND</principalBusinessAddress>
+        <principalJob>Investment Adviser</principalJob>
+        <hasBeenConvicted>The Reporting Person has not been, during the last five years, convicted in a criminal proceeding (excluding traffic violations or similar misdemeanors).</hasBeenConvicted>
+        <convictionDescription>The Reporting Person has not been, during the last five years, a party to a civil proceeding of a judicial or administrative body of competent jurisdiction and as a result of such proceeding was or is subject to a judgment, decree or final order enjoining future violations of, or prohibiting or mandating activities subject to, federal or state securities laws or finding of any violation with respect to such laws.</convictionDescription>
+        <citizenship>SWITZERLAND</citizenship>
+      </item2>
+      <item3>
+        <fundsSource>The Reporting Person acquired the shares of common stock of Elastic NV on behalf of its institutional clients who are managed on a discretionary basis. The purchase cost is approximately 396,586,172. The source of the funds comes from our institutional clients' assets.</fundsSource>
+      </item3>
+      <item4>
+        <transactionPurpose>The Reporting Person acquired shares of Elastic NV as part of its investment strategy, which includes considering the clarity and robustness of the issuer's long-term strategy; the functioning and calibre of governance structures and effective leadership; the financial strength and performance of issuers and the fair valuation of underlying securities; and financially-material sustainability risks &amp; opportunities. The Reporting Person is therefore actively engaging with the Issuer to discuss and promote initiatives that align with these business practices.
+
+This engagement is part of the Reporting Person's broader strategy to support companies in enhancing their approach, thereby potentially improving long-term shareholder value. As such, the Reporting Person may seek to influence the Issuer's policies and practices through discussions with the Boards and management of the companies in which we invest.
+
+The Reporting Person does not currently have any plans or proposals that would result in a change in control of the Issuer, nor does it intend to acquire additional shares for the purpose of gaining control. However, the Reporting Person reserves the right to change its intentions and take any actions that it deems appropriate in light of its ongoing engagement and evaluation of the Issuer's policies and practices.</transactionPurpose>
+      </item4>
+      <item5>
+        <percentageOfClassSecurities>The Reporting Person beneficially owns 5,217,779 shares of common stock of Elastic NV, representing approximately 4.9234% of the class of Securities outstanding.</percentageOfClassSecurities>
+        <numberOfShares>The Reporting Person has sole power to vote 5,202,209 shares of common stock of Elastic NV.</numberOfShares>
+        <transactionDesc>Trade Date  Type  Quantity  Price   Exchange
+10/26/2026  SELL  13777     106.05  The New York Stock Exchange
+10/26/2026  SELL  2433      106.06  The New York Stock Exchange
+10/26/2026  SELL  3771      102.52  The New York Stock Exchange
+10/26/2026  SELL  253287    106.06  The New York Stock Exchange
+10/21/2026  SELL  195       98.71   The New York Stock Exchange
+10/20/2026  SELL  6856      95.51   The New York Stock Exchange
+10/20/2026  BUY   9374      95.25   The New York Stock Exchange
+10/20/2026  BUY   88        95.63   The New York Stock Exchange
+10/19/2026  BUY   4066      94.49   The New York Stock Exchange
+10/19/2026  SELL  133       94.98   The New York Stock Exchange
+10/16/2026  SELL  397       94.29   The New York Stock Exchange
+10/16/2026  SELL  320       91.74   The New York Stock Exchange
+10/16/2026  BUY   22116     91.74   The New York Stock Exchange
+10/16/2026  SELL  4436      97.73   The New York Stock Exchange
+10/16/2026  BUY   22115     91.30   The New York Stock Exchange
+10/13/2026  SELL  354       95.28   The New York Stock Exchange
+10/13/2026  SELL  323       94.32   The New York Stock Exchange
+10/12/2026  SELL  350       101.10  The New York Stock Exchange
+10/09/2026  BUY   102       98.23   The New York Stock Exchange
+10/07/2026  SELL  72        93.10   The New York Stock Exchange
+10/06/2026  SELL  139       96.15   The New York Stock Exchange
+10/06/2026  BUY   1639      96.08   The New York Stock Exchange
+10/05/2026  BUY   88984     94.24   The New York Stock Exchange
+10/05/2026  BUY   129016    92.25   The New York Stock Exchange
+10/05/2026  BUY   6790      94.24   The New York Stock Exchange
+10/05/2026  BUY   816       94.24   The New York Stock Exchange
+10/05/2026  BUY   1184      92.25   The New York Stock Exchange
+10/05/2026  BUY   9800      92.25   The New York Stock Exchange
+10/02/2026  SELL  582       92.58   The New York Stock Exchange
+10/02/2026  SELL  599       93.94   The New York Stock Exchange
+10/02/2026  SELL  3921      93.94   The New York Stock Exchange
+09/30/2026  SELL  34        91.70   The New York Stock Exchange
+09/30/2026  BUY   207       91.70   The New York Stock Exchange
+09/29/2026  BUY   55        88.80   The New York Stock Exchange
+09/28/2026  BUY   657       86.54   The New York Stock Exchange
+09/22/2026  SELL  38        89.22   The New York Stock Exchange
+09/21/2026  SELL  210       89.38   The New York Stock Exchange
+09/18/2026  SELL  194       86.96   The New York Stock Exchange
+09/18/2026  SELL  229       86.96   The New York Stock Exchange
+09/18/2026  SELL  431       86.96   The New York Stock Exchange
+09/18/2026  SELL  7258      87.86   The New York Stock Exchange
+09/18/2026  SELL  629       86.96   The New York Stock Exchange
+09/15/2026  BUY   15        85.16   The New York Stock Exchange
+09/14/2026  SELL  616       85.11   The New York Stock Exchange
+09/11/2026  BUY   146       83.39   The New York Stock Exchange
+09/09/2026  SELL  1922      88.39   The New York Stock Exchange
+09/08/2026  BUY   19799     88.42   The New York Stock Exchange
+09/08/2026  SELL  7995      89.37   The New York Stock Exchange
+09/08/2026  SELL  32570     88.86   The New York Stock Exchange
+09/04/2026  SELL  4833      95.14   The New York Stock Exchange
+09/01/2026  SELL  1758      95.51   The New York Stock Exchange
+09/01/2026  BUY   7258      92.39   The New York Stock Exchange
+09/01/2026  BUY   1313      95.51   The New York Stock Exchange
+09/01/2026  SELL  22444     93.65   The New York Stock Exchange
+08/31/2026  BUY   13774     98.50   The New York Stock Exchange
+08/31/2026  BUY   473       97.55   The New York Stock Exchange
+08/31/2026  BUY   222       97.55   The New York Stock Exchange
+08/31/2026  BUY   38        97.55   The New York Stock Exchange
+08/28/2026  SELL  2369      99.21   The New York Stock Exchange
+08/28/2026  SELL  279279    99.21   The New York Stock Exchange
+08/28/2026  BUY   47010     105.10  The New York Stock Exchange
+08/28/2026  BUY   20343     105.10  The New York Stock Exchange
+08/28/2026  BUY   568       99.91   The New York Stock Exchange
+08/28/2026  BUY   201       99.91   The New York Stock Exchange</transactionDesc>
+        <listOfShareholders>The securities reported herein come from the assets of our institutional clients who are managed by the Reporting Person on a discretionary basis. Consequently, our clients have the right to receive dividends and any proceeds from the sale of the Issuer's securities, in proportion to their respective managed assets.
+
+The Reporting Person itself does not have any direct economic interest in the dividends or sale proceeds from the securities of Elastic NV, other than its entitlement to management fees and / or performance-based compensation, as agreed upon with its clients. The Reporting Person's role is limited to managing the investments in accordance with the investment objectives and strategies set forth by each of its institutional clients.</listOfShareholders>
+        <date5PercentOwnership>Not Applicable</date5PercentOwnership>
+      </item5>
+      <item6>
+        <contractDescription>The Reporting Person's exposure to Elastic NV is solely through direct stock investments held by its managed institutional clients. There are no contracts, arrangements, understandings, or relationships with any third parties regarding the securities of Elastic NV, other than those arising from the ordinary course of discretionary management of our client assets.
+
+The Reporting Person does not have any derivative positions, options, or other financial instruments related to the securities of the Issuer. Furthermore, there are no agreements or understandings that would influence the voting or disposition of these securities beyond the Reporting Person's discretionary investment authority as an asset manager.</contractDescription>
+      </item6>
+      <item7>
+        <filedExhibits>Not Applicable</filedExhibits>
+      </item7>
+    </items1To7>
+    <signatureInfo>
+      <signaturePerson>
+        <signatureReportingPerson>PICTET ASSET MANAGEMENT SA</signatureReportingPerson>
+        <signatureDetails>
+          <signature>Robert HENDERSON</signature>
+          <title>Global Head of Compliance</title>
+          <date>10/27/2026</date>
+        </signatureDetails>
+      </signaturePerson>
+    </signatureInfo>
+  </formData>
+</edgarSubmission>

@@ -39,6 +39,13 @@ jobs:
           tags: stock-alerts:test
           cache-from: type=gha
 
+      - name: Unit tests
+        run: |
+          docker run --rm -v "$PWD/tests:/srv/tests:ro" -e DATA_DIR=/tmp/testdata \
+            -e FINNHUB_API_KEY=ci -e SEC_USER_AGENT=ci@example.com -e WATCHLIST=AAPL \
+            -e DISCORD_WEBHOOK_URL=https://example.invalid/hook \
+            --entrypoint python stock-alerts:test -m unittest discover -s tests -v
+
       - name: Smoke test (starts up, Discord code loads)
         run: |
           COMMON="-e FINNHUB_API_KEY=ci -e SEC_USER_AGENT=ci@example.com -e WATCHLIST=AAPL -e DRY_RUN=true \

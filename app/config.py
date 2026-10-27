@@ -23,7 +23,7 @@ def norm(sym):
     return sym.strip().upper().lstrip("$").replace("-", ".")
 
 
-KINDS = {"news", "move", "halt", "filing", "earnings", "call", "site", "system"}
+KINDS = {"news", "move", "halt", "filing", "insider", "stake", "earnings", "call", "site", "system"}
 
 
 def event_filter(name, default):
@@ -71,6 +71,18 @@ INITIAL_WATCHLIST = [norm(s) for s in csv("WATCHLIST")]
 MAX_TICKERS = int(env("MAX_TICKERS", "50"))
 MOVE_PCT = float(env("MOVE_THRESHOLD_PCT", "5"))
 FORMS = {f.upper() for f in csv("SEC_FORMS", "10-K,10-K/A,10-Q,10-Q/A,8-K,8-K/A")}
+# Ownership filings, tracked separately from SEC_FORMS. EDGAR renamed "SC 13D" to "SCHEDULE 13D" in Dec 2024.
+FORMS_13D = {"SC 13D", "SC 13D/A", "SCHEDULE 13D", "SCHEDULE 13D/A"}
+FORMS_13G = {"SC 13G", "SC 13G/A", "SCHEDULE 13G", "SCHEDULE 13G/A"}
+FORMS_4 = {"4", "4/A"}
+TRACK_13D = flag("TRACK_13D", "true")
+TRACK_13G = flag("TRACK_13G", "false")
+TRACK_FORM4 = flag("TRACK_FORM4", "true")
+OWNERSHIP_FORMS = (FORMS_13D if TRACK_13D else set()) | (FORMS_13G if TRACK_13G else set()) | \
+                  (FORMS_4 if TRACK_FORM4 else set())
+# Form 4 transaction codes to alert on (P = open-market buy, S = open-market sale, ...), or "all"
+_f4 = env("FORM4_CODES", "all").strip().upper()
+FORM4_CODES = None if _f4 in ("", "ALL") else {x.strip() for x in _f4.split(",") if x.strip()}
 NEWS_MAX_AGE_H = float(env("NEWS_MAX_AGE_HOURS", "6"))
 NEWS_MAX_PER_CYCLE = int(env("NEWS_MAX_PER_CYCLE", "3"))
 SITE_MAX_PER_CYCLE = int(env("SITE_MAX_PER_CYCLE", "3"))
