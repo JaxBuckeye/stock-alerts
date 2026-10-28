@@ -12,6 +12,11 @@ USER bot
 VOLUME /data
 EXPOSE 8080
 
+# Which build this is (shown under System > Updates); set by the GitHub Action
+ARG APP_VERSION=dev
+ARG BUILD_DATE=
+ENV APP_VERSION=$APP_VERSION BUILD_DATE=$BUILD_DATE
+
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s \
   CMD python -c "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/data/heartbeat')<180 else 1)"
 

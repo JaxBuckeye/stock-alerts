@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# written by the GitHub Action at build time
+app/CHANGELOG.txt

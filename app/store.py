@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS watchlist (sym TEXT PRIMARY KEY, name TEXT, added_by 
 CREATE TABLE IF NOT EXISTS sites (sym TEXT PRIMARY KEY, homepage TEXT, news_url TEXT,
                                   feed_url TEXT, manual INTEGER DEFAULT 0, checked_ts INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS cvrs (sym TEXT PRIMARY KEY, data TEXT, added_by TEXT, added_ts INTEGER);
+CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, kind TEXT, sym TEXT,
+                                   title TEXT, message TEXT, url TEXT, priority INTEGER, delivered TEXT);
+CREATE INDEX IF NOT EXISTS alerts_ts ON alerts (ts);
 """)
             self.db.commit()
 
@@ -43,6 +46,28 @@ CREATE TABLE IF NOT EXISTS cvrs (sym TEXT PRIMARY KEY, data TEXT, added_by TEXT,
         # pruned or those items would alert again as "new". Everything else is dated or age-filtered.
         self._run("DELETE FROM seen WHERE ts < ? AND key NOT LIKE 'seeded:%' AND key NOT LIKE 'filing:%' "
                   "AND key NOT LIKE 'cvrfile:%' AND key NOT LIKE 'site:%'", (int(time.time()) - days * 86400,))
+        self._run("DELETE FROM alerts WHERE ts < ?", (int(time.time()) - 90 * 86400,))  # feed keeps 90 days
+
+    # --- activity feed
+    def alert_add(self, kind, sym, title, message, url, priority, delivered):
+        self._run("INSERT INTO alerts (ts, kind, sym, title, message, url, priority, delivered) VALUES (?,?,?,?,?,?,?,?)",
+                  (int(time.time()), kind, sym, title, message, url, priority, json.dumps(delivered or [])))
+
+    def alerts(self, limit=100, after=0, before=None, kind=None, sym=None):
+        q, args = "SELECT * FROM alerts WHERE id > ?", [after]
+        if before:
+            q, args = q + " AND id < ?", args + [before]
+        if kind:
+            q, args = q + " AND kind = ?", args + [kind]
+        if sym:
+            q, args = q + " AND sym = ?", args + [sym]
+        with self.lock:
+            rows = self.db.execute(q + " ORDER BY id DESC LIMIT ?", args + [limit]).fetchall()
+        return [dict(r, delivered=json.loads(r["delivered"] or "[]")) for r in rows]
+
+    def alert_count_since(self, ts):
+        with self.lock:
+            return self.db.execute("SELECT COUNT(*) FROM alerts WHERE ts >= ?", (ts,)).fetchone()[0]
 
     # --- watchlist
     def tickers(self):

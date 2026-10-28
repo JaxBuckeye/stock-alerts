@@ -132,6 +132,8 @@ WEB_PORT = s.WEB_PORT
 _level = (env("LOG_LEVEL", "INFO") or "INFO").strip().upper()
 logging.basicConfig(level=_level if _level in ("DEBUG", "INFO", "WARNING", "ERROR") else "INFO",
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
+from . import logbuffer  # noqa: E402  (recent log lines for the web page)
+logbuffer.install()
 
 if not (PUSHOVER_ON or DISCORD_ON or SMS_ON):
     ERRORS.append("No alert channel set up. Set a Discord webhook, Pushover, and/or Twilio.")

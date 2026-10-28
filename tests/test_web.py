@@ -115,7 +115,7 @@ class WebPage(unittest.TestCase):
     def test_secrets_are_never_shown(self):
         self.make_account()
         s.save({"DISCORD_WEBHOOK_URL": "https://discord.example/hook/SECRET123"})
-        page = self.client.get("/").data.decode()
+        page = self.client.get("/settings/discord-webhook").data.decode()
         self.assertNotIn("SECRET123", page)
         self.assertIn("Saved. Leave blank to keep it.", page)
 
@@ -152,6 +152,86 @@ class WebPage(unittest.TestCase):
         r = self.client.post("/login?next=//evil.example", data={"csrf": self.csrf(), "username": "admin",
                                                                   "password": "correct horse"})
         self.assertFalse(re.search(r"evil\.example", r.headers["Location"]))
+
+
+class Pages(unittest.TestCase):
+    """Every page renders, the feed shows recorded alerts, and the logo is public."""
+
+    def setUp(self):
+        reset_db()
+        state.db.execute("DELETE FROM alerts")
+        state.db.commit()
+        self.app = web.create_app(restart=lambda: None)
+        self.app.config["TESTING"] = True
+        self.client = self.app.test_client()
+        self.client.get("/health")
+        with self.client.session_transaction() as sess:
+            csrf = sess["csrf"]
+        self.client.post("/setup", data={"csrf": csrf, "code": web.setup_code(), "username": "admin",
+                                         "password": "correct horse", "confirm": "correct horse"})
+
+    def test_logo_and_favicon_need_no_login(self):
+        anon = self.app.test_client()
+        r = anon.get("/static/logo.svg")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"<svg", r.data)
+        self.assertIn("/static/logo.svg", anon.get("/favicon.ico").headers["Location"])
+
+    def test_every_page_renders(self):
+        with mock.patch("app.version.latest", return_value=([], None)):
+            for path in ["/", "/watchlist", "/cvrs", "/settings", "/system/status", "/system/logs",
+                         "/system/logs?level=ERROR", "/system/updates", "/password"] + \
+                        [f"/settings/{sl}" for sl in web.SECTIONS]:
+                r = self.client.get(path)
+                self.assertEqual(r.status_code, 200, path)
+                self.assertIn(b"/static/logo.svg", r.data, path)  # icon + watermark in the layout
+
+    def test_settings_sections_list_only_their_settings(self):
+        page = self.client.get("/settings/pushover").data.decode()
+        self.assertIn("PUSHOVER_APP_TOKEN", page)
+        self.assertNotIn('name="FINNHUB_API_KEY"', page)
+        self.assertIn('href="/settings/sec-filings"', page)  # sub-menu in the sidebar
+
+    def test_section_save_redirects_back_to_section(self):
+        with mock.patch("threading.Timer"):
+            r = self.client.post("/settings/alerts", data={"csrf": self._csrf(), "MOVE_THRESHOLD_PCT": "7.5"})
+        self.assertIn(b"/settings/alerts", r.data)
+        self.assertEqual(s.stored()["MOVE_THRESHOLD_PCT"], "7.5")
+
+    def _csrf(self):
+        with self.client.session_transaction() as sess:
+            return sess["csrf"]
+
+    def test_feed_shows_sent_alerts_and_api_pages(self):
+        from app import config as c
+        from app import notify as n
+        with mock.patch.object(c, "DRY_RUN", True):
+            n.notify("LGVN press release (GlobeNewswire)", "Longeveron Announces Engagement of Lucid Capital Markets",
+                     url="https://example.com/x", kind="news", sym="LGVN")
+            n.notify("<script>alert(1)</script>", "x", kind="system")
+        page = self.client.get("/").data.decode()
+        self.assertIn("Lucid Capital Markets", page)
+        self.assertNotIn("<script>alert(1)</script>", page)  # titles go through JSON, rendered as text
+        rows = self.client.get("/api/alerts").get_json()
+        self.assertEqual([r["sym"] for r in rows], ["", "LGVN"])
+        self.assertEqual(rows[1]["delivered"], ["dry run"])
+        newest = rows[0]["id"]
+        self.assertEqual(self.client.get(f"/api/alerts?after={newest}").get_json(), [])
+        self.assertEqual(len(self.client.get("/api/alerts?kind=news").get_json()), 1)
+        self.assertEqual(len(self.client.get("/api/alerts?sym=lgvn").get_json()), 1)
+
+    def test_api_needs_login(self):
+        r = self.app.test_client().get("/api/alerts")
+        self.assertIn(r.status_code, (302, 401))
+
+    def test_updates_marks_newer_commits(self):
+        commits = [{"sha": "c" * 40, "date": "2026-10-29", "msg": "Newest"},
+                   {"sha": "b" * 40, "date": "2026-10-28", "msg": "Installed one"},
+                   {"sha": "a" * 40, "date": "2026-10-27", "msg": "Older"}]
+        with mock.patch("app.version.VERSION", "b" * 40), mock.patch("app.version.latest", return_value=(commits, None)):
+            page = self.client.get("/system/updates").data.decode()
+        self.assertIn("1 newer update", page)
+        self.assertIn("installed", page)
 
 
 if __name__ == "__main__":

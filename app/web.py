@@ -1,4 +1,4 @@
-"""Web page: first-run account setup, login, every setting, and the CVR list.
+"""Web page: activity feed, watchlist, CVRs, settings by section, and System (status, logs, updates).
 
 The first visit asks for a one-time setup code printed in the container logs, so nobody else on the
 network can claim the admin account first. Saving settings restarts the app so they take effect.
@@ -6,23 +6,57 @@ network can claim the admin account first. Saving settings restarts the app so t
 import hmac
 import logging
 import os
+import platform
+import re
 import secrets
 import threading
 import time
 from datetime import timedelta
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from jinja2 import DictLoader
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import config as c
+from . import logbuffer
 from . import settings as s
+from . import version
 from .store import state
 from .web_templates import TEMPLATES
 
 log = logging.getLogger("web")
 MAX_FAILS, LOCK_SECONDS = 5, 300
 _fails = {}  # ip -> [failures, locked_until]
+
+KIND_LABELS = {"news": "News", "call": "Call/event", "site": "Website", "filing": "Filing", "insider": "Insider",
+               "stake": "13D/13G", "cvr": "CVR", "move": "Price move", "halt": "Halt", "earnings": "Earnings",
+               "system": "System"}
+SECTION_INFO = {
+    "Required": "API keys and contact details the app can't run without.",
+    "Watchlist": "Which tickers are watched and how many are allowed.",
+    "Discord bot": "Slash commands, who may use them, and per-ticker channels.",
+    "Discord webhook": "The channel alerts are posted to.",
+    "Pushover": "Push notifications to your phone.",
+    "SMS (Twilio)": "Text messages for the alerts that matter most.",
+    "SEC filings": "8-K/10-Q filings, Form 4 insider trades and 13D/13G stakes.",
+    "CVRs": "Contingent value rights: how often to check and where to look.",
+    "Alerts": "Thresholds, limits, press-wire search and dry run.",
+    "Jobs": "Turn each check on or off and set how often it runs.",
+    "Advanced": "Logging.",
+}
+
+
+def slug(name):
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+GROUPS = list(dict.fromkeys(g for _, g, *_ in s.SCHEMA))
+SECTIONS = {slug(g): g for g in GROUPS}
+
+
+def kind_colors():
+    from .notify import COLORS
+    return {k: f"#{v:06x}" for k, v in COLORS.items()}
 
 
 def setup_code():
@@ -37,6 +71,14 @@ def has_user():
     return bool(s.meta_get("web_user") and s.meta_get("web_pw_hash"))
 
 
+def ago(ts):
+    d = max(0, int(time.time() - ts))
+    for size, unit in ((86400, "d"), (3600, "h"), (60, "m")):
+        if d >= size:
+            return f"{d // size}{unit}"
+    return f"{d}s"
+
+
 def create_app(restart=None):
     app = Flask(__name__)
     key = s.meta_get("web_secret")
@@ -44,8 +86,11 @@ def create_app(restart=None):
         key = secrets.token_hex(32)
         s.meta_set("web_secret", key)
     app.config.update(SECRET_KEY=key, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
-                      PERMANENT_SESSION_LIFETIME=timedelta(days=7), RESTART=restart or s.restart)
+                      PERMANENT_SESSION_LIFETIME=timedelta(days=7), RESTART=restart or s.restart,
+                      SEND_FILE_MAX_AGE_DEFAULT=3600)
     app.jinja_loader = DictLoader(TEMPLATES)
+    app.jinja_env.filters["ago"] = ago
+    app.jinja_env.filters["when"] = lambda ts: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
 
     def schedule_restart():
         threading.Timer(1.5, app.config["RESTART"]).start()
@@ -56,22 +101,29 @@ def create_app(restart=None):
             session["csrf"] = secrets.token_urlsafe(24)
         if request.method == "POST" and not hmac.compare_digest(request.form.get("csrf", ""), session["csrf"]):
             return "Form expired. Go back, reload the page and try again.", 400
-        if request.endpoint in ("setup", "login", "static", "health"):
+        if request.endpoint in ("setup", "login", "static", "health", "favicon"):
             return None
         if not has_user():
             return redirect(url_for("setup"))
         if session.get("user") != s.meta_get("web_user"):
+            if request.path.startswith("/api/"):
+                return jsonify(error="login required"), 401
             return redirect(url_for("login", next=request.path))
         return None
 
     @app.context_processor
     def common():
         return {"csrf": session.get("csrf", ""), "user": session.get("user"), "errors": c.ERRORS,
-                "warnings": c.WARNINGS}
+                "warnings": c.WARNINGS, "sections": [(slug(g), g) for g in GROUPS], "version": version.short(),
+                "endpoint": request.endpoint, "view_args": request.view_args or {}}
 
     @app.get("/health")
     def health():
         return "ok"
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return redirect(url_for("static", filename="logo.svg"))
 
     # ------------------------------------------------------------ account
     @app.route("/setup", methods=["GET", "POST"])
@@ -147,28 +199,85 @@ def create_app(restart=None):
                 return redirect(url_for("index"))
         return render_template("password.html")
 
-    # ------------------------------------------------------------ settings
-    def rows():
-        saved = s.stored()
-        groups = {}
-        for k, g, t, d, h in s.SCHEMA:
-            val = s.get(k, saved)
-            groups.setdefault(g, []).append({
-                "key": k, "type": t, "help": h, "default": d, "source": s.source(k, saved),
-                "value": "" if t == "secret" else val, "is_set": bool((val or "").strip()),
-                "choices": t[7:].split(",") if t.startswith("choice:") else None})
-        return groups
+    # ------------------------------------------------------------ activity
+    def feed_rows(**kw):
+        return [{"id": a["id"], "ts": a["ts"], "kind": a["kind"], "sym": a["sym"] or "", "title": a["title"] or "",
+                 "message": a["message"] or "", "url": a["url"] or "", "priority": a["priority"] or 0,
+                 "delivered": a["delivered"]} for a in state.alerts(**kw)]
 
     @app.get("/")
     def index():
+        kind = request.args.get("kind") or None
+        sym = c.norm(request.args.get("sym", "")) or None
+        stats = {"tickers": len(state.tickers()), "cvrs": len(state.cvr_list()),
+                 "today": state.alert_count_since(time.time() - 86400),
+                 "channels": [("Discord", c.DISCORD_ON), ("Bot", bool(c.DISCORD_BOT_TOKEN)),
+                              ("Pushover", c.PUSHOVER_ON), ("SMS", c.SMS_ON)]}
+        return render_template("activity.html", alerts=feed_rows(limit=100, kind=kind, sym=sym), kind=kind or "",
+                               sym=sym or "", stats=stats, kinds=KIND_LABELS, colors=kind_colors(),
+                               dry_run=c.DRY_RUN)
+
+    @app.get("/api/alerts")
+    def api_alerts():
+        a = request.args
+        rows = feed_rows(limit=min(int(a.get("limit", 100) or 100), 500), after=int(a.get("after", 0) or 0),
+                         before=int(a.get("before", 0) or 0) or None, kind=a.get("kind") or None,
+                         sym=c.norm(a.get("sym", "")) or None)
+        return jsonify(rows)
+
+    # ------------------------------------------------------------ watchlist
+    @app.get("/watchlist")
+    def watchlist():
+        from .jobs import is_blocked
+        rows = []
+        for sym, name in state.watch_rows():
+            site = state.get_site(sym) or {}
+            src = site.get("news_url") or site.get("homepage") or ""
+            rows.append({"sym": sym, "name": name if name and name != sym else "", "homepage": site.get("homepage"),
+                         "news": site.get("news_url"), "feed": site.get("feed_url"), "manual": site.get("manual"),
+                         "blocked": bool(src) and is_blocked(src)})
+        return render_template("watchlist.html", rows=rows, bot=bool(c.DISCORD_BOT_TOKEN))
+
+    # ------------------------------------------------------------ settings
+    def rows_for(group):
         saved = s.stored()
-        env_count = sum(1 for k in s.SPEC if s.source(k, saved) == "env")
         env_keys = {k for k in s.SPEC if os.environ.get(k) is not None}
-        return render_template("settings.html", groups=rows(), env_count=env_count, env_keys=env_keys)
+        out = []
+        for k, g, t, d, h in s.SCHEMA:
+            if g != group:
+                continue
+            val = s.get(k, saved)
+            out.append({"key": k, "type": t, "help": h, "default": d, "source": s.source(k, saved),
+                        "value": "" if t == "secret" else val, "is_set": bool((val or "").strip()),
+                        "choices": t[7:].split(",") if t.startswith("choice:") else None,
+                        "reset_to": ".env" if k in env_keys else "default"})
+        return out
+
+    @app.get("/settings")
+    def settings_index():
+        saved = s.stored()
+        cards = []
+        for g in GROUPS:
+            keys = [k for k, gg, *_ in s.SCHEMA if gg == g]
+            cards.append({"slug": slug(g), "name": g, "info": SECTION_INFO.get(g, ""), "count": len(keys),
+                          "web": sum(s.source(k, saved) == "web" for k in keys),
+                          "env": sum(s.source(k, saved) == "env" for k in keys)})
+        env_count = sum(x["env"] for x in cards)
+        return render_template("settings_index.html", cards=cards, env_count=env_count)
+
+    @app.get("/settings/<section>")
+    def settings_section(section):
+        group = SECTIONS.get(section)
+        if not group:
+            return redirect(url_for("settings_index"))
+        return render_template("settings.html", group=group, section=section, info=SECTION_INFO.get(group, ""),
+                               rows=rows_for(group))
 
     @app.post("/settings")
-    def save_settings():
+    @app.post("/settings/<section>")
+    def save_settings(section=None):
         f, saved = request.form, s.stored()
+        back = url_for("settings_section", section=section) if section in SECTIONS else url_for("settings_index")
         updates, reset, problems = {}, [], []
         for k, spec in s.SPEC.items():
             if f.get(f"reset_{k}"):
@@ -191,14 +300,14 @@ def create_app(restart=None):
         if problems:
             for p in problems:
                 flash(p, "error")
-            return redirect(url_for("index"))
+            return redirect(back)
         if not updates and not reset:
             flash("Nothing changed.", "ok")
-            return redirect(url_for("index"))
+            return redirect(back)
         s.save(updates, reset)
         log.info("Settings changed on the web page: %s", ", ".join(sorted(updates) + [f"{k} (reset)" for k in reset]))
         schedule_restart()
-        return render_template("restarting.html", changed=sorted(updates) + reset)
+        return render_template("restarting.html", changed=sorted(updates) + reset, back=back)
 
     @app.post("/settings/import-env")
     def import_env():
@@ -206,11 +315,11 @@ def create_app(restart=None):
         moved = {k: s.get(k, saved) for k in s.SPEC if s.source(k, saved) == "env"}
         if not moved:
             flash("Nothing to copy: no settings are coming from .env.", "ok")
-            return redirect(url_for("index"))
+            return redirect(url_for("settings_index"))
         s.save(moved)
         log.info("Copied %d settings from .env to the web page", len(moved))
         flash(f"Copied {len(moved)} settings from .env. They're now stored here, so you can clear them out of .env.", "ok")
-        return redirect(url_for("index"))
+        return redirect(url_for("settings_index"))
 
     # ------------------------------------------------------------ CVRs
     @app.get("/cvrs")
@@ -263,6 +372,32 @@ def create_app(restart=None):
         state.cvr_remove(sym)
         flash(f"Stopped tracking {sym}.", "ok")
         return redirect(url_for("cvrs"))
+
+    # ------------------------------------------------------------ system
+    @app.get("/system/status")
+    def system_status():
+        from .jobs import _blocked
+        blocked = [(h, code, int(until - time.time()) // 60) for h, (until, code) in _blocked.items()
+                   if until > time.time()]
+        jobs_ = [(n, c.INTERVALS[n], c.ENABLED.get(n)) for n in c.INTERVALS]
+        info = [("Version", version.short()), ("Built", version.BUILD_DATE or "unknown"),
+                ("Up for", ago(version.STARTED)), ("Python", platform.python_version()),
+                ("Data folder", c.DATA_DIR), ("Web port", c.WEB_PORT), ("Dry run", "on" if c.DRY_RUN else "off")]
+        return render_template("status.html", info=info, jobs=jobs_, blocked=blocked,
+                               channels=[("Discord webhook", c.DISCORD_ON), ("Discord bot", bool(c.DISCORD_BOT_TOKEN)),
+                                         ("Pushover", c.PUSHOVER_ON), ("SMS (Twilio)", c.SMS_ON)])
+
+    @app.get("/system/logs")
+    def system_logs():
+        level = request.args.get("level", "INFO").upper()
+        level = level if level in ("INFO", "WARNING", "ERROR") else "INFO"
+        return render_template("logs.html", entries=logbuffer.entries(level)[:500], level=level)
+
+    @app.get("/system/updates")
+    def system_updates():
+        rows, newer, err = version.updates(force=bool(request.args.get("check")))
+        return render_template("updates.html", rows=rows, newer=newer, err=err, current=version.short(),
+                               built=version.BUILD_DATE, changelog=version.changelog()[:30], repo=version.REPO)
 
     return app
 

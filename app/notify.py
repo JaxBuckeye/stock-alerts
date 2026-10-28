@@ -74,22 +74,42 @@ def _sms(title, message, url):
     return any(sent)
 
 
+def _record(kind, sym, title, message, url, priority, delivered):
+    """Keep a copy for the web page's activity feed. Never let this break sending."""
+    try:
+        from .store import state
+        state.alert_add(kind, sym, title, message, url, priority, delivered)
+    except Exception:
+        log.exception("couldn't record alert for the activity feed")
+
+
 def notify(title, message, url=None, url_title=None, priority=0, sound=None, kind="news", sym=None):
     """True if at least one channel delivered (or no channel wants this kind of event)."""
     if c.DRY_RUN:
         log.info("[DRY RUN] (%s) %s | %s | %s", kind, title, message, url)
+        _record(kind, sym, title, message, url, priority, ["dry run"])
         return True
-    results = []
+    results, delivered = [], []
     if c.PUSHOVER_ON and kind in c.PUSHOVER_EVENTS:
-        results.append(_pushover(title, message, url, url_title, priority, sound))
+        r = _pushover(title, message, url, url_title, priority, sound)
+        results.append(r)
+        delivered += ["Pushover"] if r else []
     routed = False
     if sym and ticker_poster and kind in c.TICKER_CHANNEL_EVENTS:
         r = ticker_poster(sym, title, message, url, kind, priority)  # None = no channel for this ticker
         if r is not None:
             results.append(r)
             routed = r
+            delivered += [f"#{sym.lower()}"] if r else []
     if c.DISCORD_ON and kind in c.DISCORD_EVENTS and not (routed and c.DISCORD_TICKER_ONLY):
-        results.append(_discord(title, message, url, kind, priority))
+        r = _discord(title, message, url, kind, priority)
+        results.append(r)
+        delivered += ["Discord"] if r else []
     if c.SMS_ON and kind in c.SMS_EVENTS:
-        results.append(_sms(title, message, url))
-    return any(results) if results else True
+        r = _sms(title, message, url)
+        results.append(r)
+        delivered += ["SMS"] if r else []
+    ok = any(results) if results else True
+    if ok:  # a failed send is retried next cycle, so it's recorded then
+        _record(kind, sym, title, message, url, priority, delivered or ["no channel for this kind"])
+    return ok

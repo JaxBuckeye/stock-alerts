@@ -15,14 +15,20 @@ Alerts for every ticker on a shared watchlist that people manage from Discord.
 | New press releases on the company's own website | auto-discovered newsroom or RSS | 15 min |
 | CVRs: news and filings about the assets a CVR pays on, and CVR payment announcements | SEC EDGAR + Google News | 30 min |
 
-## Web page (settings and CVRs)
+## Web page
 Open `http://<server>:8080`. On the very first visit you create the login: the page asks for a one-time **setup code**,
 printed in the container logs (`First-time setup: ... enter setup code XXXXXXXX`), then you pick a username and password.
+The layout follows Sonarr/Radarr: a sidebar with sub-menus, a toolbar per page, dark theme.
 
-- **Settings** lists every option from `.env`, grouped. A value saved here wins over `.env`; each one shows whether it's
-  *set here*, *from .env* or the *default*. **Copy from .env** moves everything at once, after which `.env` can be emptied.
-  Saving restarts the app (a few seconds). Secrets are never shown; leave a secret blank to keep it.
+- **Activity** (front page) is a live feed of every alert sent (kept 90 days), with counts, channel status, filters by
+  alert type and ticker. New alerts appear every 30 seconds without reloading.
+- **Watchlist** shows each ticker's newsroom and feed, and whether its site blocks automated access.
 - **CVRs** lists tracked CVRs with what was found, and lets you add one or edit its search terms.
+- **Settings** has a section per area (Required, Discord, SEC filings, CVRs, Jobs, ...). A value saved here wins over
+  `.env`; each shows whether it's *set here*, *from .env* or the *default*. **Copy from .env** moves everything at once,
+  after which `.env` can be emptied. Saving restarts the app (a few seconds). Secrets are never shown.
+- **System**: *Status* (version, uptime, channels, checks, blocked sites), *Logs* (recent log lines, filter to warnings
+  or errors) and *Updates* (the installed build vs. the latest commits on GitHub; update by clicking Update in Dockge).
 - Passwords are stored hashed; 5 wrong passwords lock logins from that address for 5 minutes. Keep port 8080 on your
   LAN (don't forward it to the internet) since the page is plain HTTP.
 - Forgot the password? `docker exec stock-alerts python -m app.reset_login` prints a new setup code (settings are kept).
