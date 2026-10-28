@@ -60,6 +60,9 @@ SCHEMA = [
     ("NEWS_MAX_AGE_HOURS", "Alerts", "float", "6", "Ignore company news older than this."),
     ("NEWS_MAX_PER_CYCLE", "Alerts", "int", "3", "Most headlines per ticker per check; the rest are summarized."),
     ("SITE_MAX_PER_CYCLE", "Alerts", "int", "3", "Most website releases per ticker per check."),
+    ("PRESS_WIRE_NEWS", "Alerts", "bool", "true", "Also search GlobeNewswire, Business Wire, PR Newswire and others "
+                                                  "(via Google News) for each ticker's press releases. Catches "
+                                                  "companies whose website blocks the app."),
     ("EARNINGS_REMINDERS", "Alerts", "str", "1d,0d", "Days before earnings to remind. 1d,0d = day before and day of."),
     ("EARNINGS_REMIND_HOUR_ET", "Alerts", "int", "6", "Hour (Eastern) to send earnings reminders."),
     ("DRY_RUN", "Alerts", "bool", "false", "Log alerts instead of sending them."),

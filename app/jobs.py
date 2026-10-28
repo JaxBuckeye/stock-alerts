@@ -48,7 +48,9 @@ FORM4_CODE_NAMES = {
 }
 CALL_RE = re.compile(
     r"(conference call|earnings call|webcast|investor day|analyst day|investor conference|fireside chat|"
-    r"to host|will host|(announce|report|release)s?\b.{0,50}\b(results|earnings)|schedules?\b.{0,40}\b(call|results|earnings))",
+    # "to report ... results" is a date announcement; "Announces Updated Results" is the results themselves
+    r"to host|will host|\b(to|will) (announce|report|release)\b.{0,50}\b(results|earnings)|"
+    r"schedules?\b.{0,40}\b(call|results|earnings))",
     re.I)
 
 
@@ -550,9 +552,81 @@ def parse_items(src, text):
     return page_items(src, text)
 
 
-def discover(homepage):
-    """Find a newsroom page and, if one exists, its RSS/Atom feed."""
-    html = fetch_text(homepage)
+# Feed addresses that investor-site platforms serve but often don't link to (Q4, Equisolve, Notified, WordPress)
+FEED_PATHS = ["/rss/pressrelease.aspx", "/news-events/press-releases/rss", "/news-events/news-releases/rss",
+              "/news-releases/rss", "/press-releases/rss", "/rss/news-releases.xml", "/feed/"]
+BLOCKED_CODES = (401, 403, 429, 503)
+BLOCK_RETRY_S = 6 * 3600
+_blocked = {}  # host -> (until, status code)
+ARTICLE_RE = re.compile(r"news|press|release|/20\d\d/", re.I)
+WIRE_SITES = ("globenewswire.com", "businesswire.com", "prnewswire.com", "accessnewswire.com", "newsfilecorp.com")
+LAW_SPAM_RE = re.compile(
+    r"investigat|shareholder (alert|update|rights)|class action|law firm|fair (price|deal)|securities fraud|lawsuit|"
+    r"deadline alert|lead plaintiff|rosen law|pomerantz|halper|brodsky|levi & korsinsky|kahn swick|bragar|monteverde|"
+    r"ademi|bronstein|gainey|faruqi|glancy|schall|bernstein liebhard|robbins geller", re.I)
+
+
+def _host(url):
+    return urlparse(url).netloc.lower()
+
+
+def is_blocked(url):
+    until, _ = _blocked.get(_host(url), (0, 0))
+    return until > time.time()
+
+
+def note_blocked(sym, url, code):
+    if not is_blocked(url):
+        log.warning("%s: %s refuses automated access (HTTP %s); skipping it for %dh. Press-wire news still covers %s.",
+                    sym, _host(url), code, BLOCK_RETRY_S // 3600, sym)
+    _blocked[_host(url)] = (time.time() + BLOCK_RETRY_S, code)
+
+
+def _status(e):
+    return getattr(getattr(e, "response", None), "status_code", None)
+
+
+def probe_feeds(sym, *bases):
+    """A working RSS/Atom feed at a standard address on the newsroom or homepage host, or None."""
+    tried = set()
+    for base in (b for b in bases if b):
+        p = urlparse(base)
+        root = f"{p.scheme}://{p.netloc}"
+        cands = [root + path for path in FEED_PATHS]
+        if p.path.strip("/"):
+            cands = [base.rstrip("/") + "/rss", base.rstrip("/") + "/feed"] + cands
+        for url in cands:
+            if url in tried or is_blocked(url):
+                continue
+            tried.add(url)
+            try:
+                text = fetch_text(url)
+            except requests.HTTPError as e:
+                if _status(e) in BLOCKED_CODES:
+                    note_blocked(sym, url, _status(e))
+                continue
+            except requests.RequestException:
+                continue
+            head = (text or "").lstrip()[:600].lower()
+            if text and ("<rss" in head or "<feed" in head or head.startswith("<?xml")):
+                try:
+                    if parse_feed(text):
+                        return url
+                except ET.ParseError:
+                    continue
+    return None
+
+
+def discover(homepage, sym=""):
+    """Find a newsroom page and, if one exists, its RSS/Atom feed (linked, or at a standard address)."""
+    try:
+        html = fetch_text(homepage)
+    except requests.HTTPError as e:
+        if _status(e) in BLOCKED_CODES:
+            note_blocked(sym, homepage, _status(e))
+        return None, None
+    except requests.RequestException:
+        return None, None
     if not html:
         return None, None
     p = _Links(homepage)
@@ -574,18 +648,22 @@ def discover(homepage):
             continue
         if score > best_score:
             best, best_score = href.split("#")[0], score
-    if not best:
-        return None, None
-    feed = None
-    try:
-        page = fetch_text(best)
-        if page:
-            p2 = _Links(best)
-            p2.feed(page)
-            feed = next((f for f in p2.feeds if any(k in f.lower() for k in ("press", "news", "release"))),
-                        p2.feeds[0] if p2.feeds else None)
-    except requests.RequestException:
-        pass
+    feed = next((f for f in p.feeds if any(k in f.lower() for k in ("press", "news", "release"))), None)
+    if best and not feed:
+        try:
+            page = fetch_text(best)
+            if page:
+                p2 = _Links(best)
+                p2.feed(page)
+                feed = next((f for f in p2.feeds if any(k in f.lower() for k in ("press", "news", "release"))),
+                            p2.feeds[0] if p2.feeds else None)
+        except requests.HTTPError as e:
+            if _status(e) in BLOCKED_CODES:
+                note_blocked(sym, best, _status(e))
+        except requests.RequestException:
+            pass
+    if not feed:
+        feed = probe_feeds(sym, best, homepage)
     return best, feed
 
 
@@ -596,11 +674,55 @@ def ensure_site(sym):
         if prof.get("weburl"):
             state.upsert_site(sym, homepage=prof["weburl"])
     row = state.get_site(sym)
-    if row and row["homepage"] and not row["manual"] and not (row["news_url"] or row["feed_url"]) \
-            and time.time() - (row["checked_ts"] or 0) > 7 * 86400:
-        news_url, feed = discover(row["homepage"])
+    if not row or not row["homepage"] or row["manual"]:
+        return
+    if not (row["news_url"] or row["feed_url"]) and time.time() - (row["checked_ts"] or 0) > 7 * 86400:
+        news_url, feed = discover(row["homepage"], sym)
         state.upsert_site(sym, news_url=news_url, feed_url=feed, checked_ts=int(time.time()))
         log.info("Site discovery %s: newsroom=%s feed=%s", sym, news_url, feed)
+    elif not row["feed_url"] and not state.has(f"probed:feeds:{sym}"):
+        # sites found before hidden-feed probing existed (or whose feed appeared later): look again monthly
+        feed = probe_feeds(sym, row["news_url"], row["homepage"])
+        state.mark(f"probed:feeds:{sym}")
+        if feed:
+            state.upsert_site(sym, feed_url=feed)
+            log.info("Site discovery %s: found feed %s", sym, feed)
+
+
+def site_sources(row):
+    """(url, only_article_links) to read: the feed, the newsroom page, and the homepage's news links."""
+    out = []
+    for url, articles_only in ((row["feed_url"], False), (row["news_url"], False), (row["homepage"], True)):
+        if url and url not in [u for u, _ in out]:
+            out.append((url, articles_only))
+    return out
+
+
+def read_source(sym, url, articles_only):
+    """Items (id, title, link) from one source, or None if it couldn't be read."""
+    if is_blocked(url):
+        return None
+    try:
+        text = fetch_text(url)
+    except requests.HTTPError as e:
+        if _status(e) in BLOCKED_CODES:
+            note_blocked(sym, url, _status(e))
+        else:
+            log.warning("%s: couldn't read %s (%s)", sym, url, e)
+        return None
+    except requests.RequestException as e:
+        log.warning("%s: couldn't read %s (%s)", sym, url, e)
+        return None
+    if not text:
+        return None
+    try:
+        items = [(i[0], i[1], i[2] if len(i) > 2 else i[0]) for i in parse_items(url, text)]
+    except ET.ParseError as e:
+        log.warning("%s: couldn't parse %s (%s)", sym, url, e)
+        return None
+    if articles_only:
+        items = [i for i in items if ARTICLE_RE.search(urlparse(i[2]).path)]
+    return items
 
 
 def check_sites():
@@ -608,39 +730,82 @@ def check_sites():
         try:
             ensure_site(sym)
             row = state.get_site(sym)
-            src = row and (row["feed_url"] or row["news_url"])
-            if not src:
-                continue
-            text = fetch_text(src)
-            if not text:
-                continue
-            seed_key = f"seeded:site:{sym}:{hashlib.md5(src.encode()).hexdigest()[:8]}"
-            first_run = not state.has(seed_key)
             fresh = []
-            for iid, title, link in ((i[0], i[1], i[2] if len(i) > 2 else i[0]) for i in parse_items(src, text)):
-                key = f"site:{sym}:{hashlib.md5(iid.encode()).hexdigest()[:16]}"
-                if state.has(key):
+            for src, articles_only in (site_sources(row) if row else []):
+                items = read_source(sym, src, articles_only)
+                if items is None:
                     continue
-                if first_run:
-                    state.mark(key)
-                    continue
-                fresh.append((key, title, link))
-            for key, title, link in fresh[:c.SITE_MAX_PER_CYCLE]:
+                seed_key = f"seeded:site:{sym}:{hashlib.md5(src.encode()).hexdigest()[:8]}"
+                first_run = not state.has(seed_key)
+                for iid, title, link in items:
+                    key = f"site:{sym}:{hashlib.md5(iid.encode()).hexdigest()[:16]}"
+                    if state.has(key):
+                        continue
+                    if first_run:  # a new source: record what's there quietly, including its headlines
+                        state.mark(key)
+                        state.mark(_tkey(sym, title))
+                        continue
+                    fresh.append((key, title, link))
+                state.mark(seed_key)
+            sent = 0
+            for key, title, link in fresh:
                 tk = _tkey(sym, title)
-                if state.has(tk):
+                if state.has(tk):  # same headline from another source or the news feed
                     state.mark(key)
                     continue
+                if sent >= c.SITE_MAX_PER_CYCLE:
+                    continue  # picked up next cycle
                 kind = classify(title, "site")
                 label = f"{sym} investor call/event" if kind == "call" else f"{sym} website: new release"
                 if notify(label, title, url=link, url_title="Read", kind=kind, sym=sym):
                     state.mark(key)
                     state.mark(tk)
-            extra = fresh[c.SITE_MAX_PER_CYCLE:]
-            if extra:
-                _overflow(sym, len(extra), "website items")
-                for key, _, _ in extra:
-                    state.mark(key)
-            state.mark(seed_key)
+                    sent += 1
+            if c.PRESS_WIRE_NEWS:
+                check_press_wires(sym)
         except Exception:
             log.exception("site check failed for %s", sym)
         time.sleep(1)  # be polite between company sites
+
+
+def check_press_wires(sym):
+    """Company press releases on the big newswires, via Google News. Catches releases from sites that block
+    automated access or build their newsroom with JavaScript."""
+    from .cvr import core, google_news, short
+    name = core(state.get_name(sym) or "")
+    word = short(name)
+    if not word or word.upper() == sym:
+        return
+    q = f'"{name}" (' + " OR ".join(f"site:{s}" for s in WIRE_SITES) + ")"
+    try:
+        items = google_news(q)
+    except (requests.RequestException, ET.ParseError) as e:
+        log.warning("%s: press-wire search failed: %s", sym, e)
+        return
+    seed_key = f"seeded:wire:{sym}"
+    first_run = not state.has(seed_key)
+    cutoff = time.time() - c.NEWS_MAX_AGE_H * 3600
+    sent = 0
+    for it in sorted(items, key=lambda i: i["ts"]):
+        title = re.sub(r"\s+-\s+[^-]{2,40}$", "", it["title"]).strip()  # drop the " - GlobeNewswire" suffix
+        key = f"wire:{sym}:{hashlib.md5(title.lower().encode()).hexdigest()[:16]}"
+        tk = _tkey(sym, title)
+        if state.has(key):
+            continue
+        if first_run or it["ts"] < cutoff or word.lower() not in title.lower() or LAW_SPAM_RE.search(title):
+            state.mark(key)
+            if first_run:
+                state.mark(tk)
+            continue
+        if state.has(tk):
+            state.mark(key)
+            continue
+        if sent >= c.SITE_MAX_PER_CYCLE:
+            continue
+        kind = classify(title, "news")
+        label = f"{sym} investor call/event" if kind == "call" else f"{sym} press release ({it['source'] or 'newswire'})"
+        if notify(label, title, url=it["link"], url_title="Read", kind=kind, sym=sym):
+            state.mark(key)
+            state.mark(tk)
+            sent += 1
+    state.mark(seed_key)

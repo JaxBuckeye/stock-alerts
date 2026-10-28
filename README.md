@@ -83,7 +83,14 @@ State lives in the `/data` volume; the container user must be able to write to i
 
 ## Notes
 - First check per ticker/source records existing items silently; only new ones alert.
-- Website monitoring reads the company's homepage (from Finnhub), finds a newsroom page and RSS feed, honors robots.txt, and checks every 15 minutes. JavaScript-rendered or bot-blocking sites may not work; set a URL with `/watch site`.
+- Website monitoring (every 15 minutes, honoring robots.txt) reads three sources per ticker and alerts once per headline:
+  the newsroom's RSS feed, the newsroom page, and news links on the company homepage. Many investor sites (Q4,
+  Equisolve and similar) build their newsroom with JavaScript but serve a feed they don't link to, so standard feed
+  addresses like `/rss/pressrelease.aspx` are tried too. Sites that refuse automated access (HTTP 403, e.g.
+  Akamai-protected `ir.` sites) are logged once and skipped for 6 hours. `PRESS_WIRE_NEWS` (on by default) also
+  searches GlobeNewswire, Business Wire, PR Newswire, ACCESS Newswire and Newsfile for each company's releases, which
+  covers those blocked sites; law-firm "shareholder investigation" releases are ignored. Override a ticker's newsroom
+  with `/watch site`.
 - Investor-call detection is keyword-based (conference call, webcast, "to host", "to report results", etc.). Earnings reminders give the date and before/after-market timing; dial-in details come from the company's announcement when they publish it.
 - The same headline from news and a company site is only alerted once.
 - Form 4 / 13D / 13G use their own settings (`TRACK_FORM4`, `FORM4_CODES`, `TRACK_13D`, `TRACK_13G`), not `SEC_FORMS`,
