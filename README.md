@@ -55,7 +55,17 @@ Then every 30 minutes it alerts (kind `cvr`, posted to a `#cycn` channel if you 
 Discord: `/cvr add`, `/cvr remove`, `/cvr list`, `/cvr info TICKER`, `/cvr asset TICKER add|remove NAME [asset|company]`.
 Preview a lookup without saving it: `docker exec stock-alerts python -m app.cvr CYCN`.
 
+## Is it running?
+- The Discord bot's status is a live heartbeat, refreshed every minute: 🟢 green dot and
+  *"Watching 23 tickers · 2 CVRs · checked 1m ago"* when all is well, 🟡 yellow when a check is overdue or failing
+  (with the reason), 🔴 red when setup is incomplete, and offline if the app has stopped.
+- `/status` in Discord shows every check's last run, alerts in the last 24 hours, channels and blocked sites.
+- Optional: set `HEARTBEAT_HOUR_ET` (e.g. `8`) for one "💚 Stock alerts is running" message a day, or a
+  "⚠️ needs attention" one if something's wrong. Off by default.
+- Restarts are no longer announced in Discord; they're listed in the web page's Activity feed.
+
 ## Discord commands
+- `/status` – health of every check (see above)
 - `/watch add AAPL, TSLA NVDA` – validates tickers, adds them, replies with the full list
 - `/watch remove TSLA` – removes, replies with the full list
 - `/watch list` – shows the list (🌐 = company newsroom monitored)

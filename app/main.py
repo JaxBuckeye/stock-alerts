@@ -1,9 +1,12 @@
 import logging
 import signal
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from . import config as c
 from . import cvr
+from . import health
 from . import jobs
 from . import web
 from .notify import notify
@@ -41,6 +44,25 @@ def heartbeat():
         pass
 
 
+def daily_heartbeat(now=None):
+    """Optional once-a-day "still running" message at HEARTBEAT_HOUR_ET (off when not set)."""
+    if c.HEARTBEAT_HOUR is None:
+        return False
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    key = f"heartbeat:{now.date()}"
+    if now.hour < c.HEARTBEAT_HOUR or state.has(key):
+        return False
+    r = health.report()
+    ok = r["status"] == "ok"
+    lines = [f"Up {r['uptime']} · build {r['version']}",
+             f"Watching {r['tickers']} tickers and {r['cvrs']} CVRs · {r['alerts_24h']} alerts in the last 24h",
+             "All checks on schedule." if ok else "Needs attention: " + "; ".join(r["problems"][:4])]
+    if notify("💚 Stock alerts is running" if ok else "⚠️ Stock alerts needs attention", "\n".join(lines),
+              kind="system", priority=0 if ok else 1):
+        state.mark(key)
+    return True
+
+
 def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
@@ -51,6 +73,12 @@ def main():
         for e in c.ERRORS:
             log.error("Setup needed: %s", e)
         log.error("Alerts are paused until this is fixed on the web page (port %d) or in .env", c.WEB_PORT)
+        if c.DISCORD_BOT_TOKEN:  # so Discord shows the bot as "setup needed" instead of just offline
+            try:
+                from . import bot
+                bot.start()
+            except Exception:
+                log.exception("Discord bot couldn't start")
         while running:
             heartbeat()
             time.sleep(5)
@@ -70,9 +98,10 @@ def main():
     if c.DISCORD_BOT_TOKEN:
         from . import bot  # imported lazily so discord.py is only needed when the bot is enabled
         bot.start()
-    if not c.DRY_RUN:
-        notify("Stock alerts started", f"Monitoring {len(tickers)} tickers: {', '.join(tickers)[:800] or 'none yet'}",
-               priority=-1, kind="system")
+    # Restarts show in the web page's Activity feed only; Discord gets the bot's live status instead.
+    state.alert_add("system", None, "Stock alerts started",
+                    f"Monitoring {len(tickers)} tickers: {', '.join(tickers)[:800] or 'none yet'}", None, -1,
+                    ["not sent (restart)"])
     last_prune = 0.0
     while running:
         now = time.monotonic()
@@ -80,12 +109,18 @@ def main():
             if now >= due:
                 try:
                     table[name]()
-                except Exception:
+                    health.record(name, True)
+                except Exception as e:
                     log.exception("job %s failed", name)
+                    health.record(name, False, e)
                 schedule[name] = time.monotonic() + c.INTERVALS[name]
         if time.time() - last_prune > 86400:
             state.prune()
             last_prune = time.time()
+        try:
+            daily_heartbeat()
+        except Exception:
+            log.exception("daily heartbeat failed")
         heartbeat()
         time.sleep(1)
     log.info("Shutting down")

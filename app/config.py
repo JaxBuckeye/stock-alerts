@@ -108,6 +108,10 @@ PRESS_WIRE_NEWS = flag("PRESS_WIRE_NEWS", "true")
 EARNINGS_REMINDERS = sorted({int(x) for x in re.findall(r"\d+", env("EARNINGS_REMINDERS", "1d,0d") or "")}, reverse=True)
 EARNINGS_REMIND_HOUR_ET = number("EARNINGS_REMIND_HOUR_ET", int)
 DRY_RUN = flag("DRY_RUN", "false")
+_hb = (env("HEARTBEAT_HOUR_ET", "") or "").strip()
+HEARTBEAT_HOUR = int(_hb) if _hb.isdigit() and 0 <= int(_hb) <= 23 else None
+if _hb and HEARTBEAT_HOUR is None:
+    WARNINGS.append(f"HEARTBEAT_HOUR_ET must be 0-23 (got {_hb!r}); the daily heartbeat is off.")
 
 # ---- CVRs
 CVR_NEWS = flag("CVR_NEWS", "true")

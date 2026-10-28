@@ -350,14 +350,17 @@ STATUS = """{% extends "base.html" %}{% block title %}Status{% endblock %}
 {% block toolbar %}<h1>System · Status</h1>{% endblock %}
 {% block body %}
 {% for w in warnings %}<div class="msg warn">{{ w }}</div>{% endfor %}
+{% if health.status == 'ok' %}<div class="msg ok">🟢 Running normally. Every check is on schedule.</div>
+{% elif health.status == 'warn' %}<div class="msg warn">🟡 Needs attention: {{ health.problems|join('; ') }}</div>{% endif %}
 <div class="grid2">
 <div class="card"><h2>About</h2><table class="tbl">{% for k, v in info %}<tr><td class="muted">{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</table></div>
 <div class="card"><h2>Alert channels</h2><table class="tbl">{% for name, on in channels %}<tr><td>{{ name }}</td>
 <td><span class="badge {{ 'on' if on else 'off' }}">{{ 'on' if on else 'off' }}</span></td></tr>{% endfor %}</table></div>
 </div>
-<div class="card"><h2>Checks</h2><table class="tbl"><thead><tr><th>Check</th><th>Every</th><th>Status</th></tr></thead>
-{% for name, every, on in jobs %}<tr><td>{{ name|capitalize }}</td><td>{{ every }}s</td>
-<td><span class="badge {{ 'on' if on and not errors else 'off' }}">{{ ('paused' if errors else 'running') if on else 'off' }}</span></td></tr>{% endfor %}</table></div>
+<div class="card"><h2>Checks</h2><table class="tbl"><thead><tr><th>Check</th><th>Every</th><th>Last ran</th><th>Status</th></tr></thead>
+{% for j in jobs %}<tr><td>{{ j.name|capitalize }}</td><td>{{ j.every }}s</td><td class="muted">{{ j.last_run if j.on else '' }}</td>
+<td>{% if not j.on %}<span class="badge off">off</span>{% elif errors %}<span class="badge off">paused</span>
+{% elif j.error %}<span class="badge err" title="{{ j.error }}">failing</span>{% else %}<span class="badge on">running</span>{% endif %}</td></tr>{% endfor %}</table></div>
 <div class="card"><h2>Blocked websites</h2>{% if blocked %}<table class="tbl"><thead><tr><th>Site</th><th>Answer</th><th>Retry in</th></tr></thead>
 {% for host, code, mins in blocked %}<tr><td>{{ host }}</td><td>HTTP {{ code }}</td><td>{{ mins }} min</td></tr>{% endfor %}</table>
 <p class="muted small">These sites refuse automated access. Press-wire search covers their releases.</p>

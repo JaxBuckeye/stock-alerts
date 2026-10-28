@@ -379,11 +379,12 @@ def create_app(restart=None):
         from .jobs import _blocked
         blocked = [(h, code, int(until - time.time()) // 60) for h, (until, code) in _blocked.items()
                    if until > time.time()]
-        jobs_ = [(n, c.INTERVALS[n], c.ENABLED.get(n)) for n in c.INTERVALS]
+        from . import health
+        r = health.report()
         info = [("Version", version.short()), ("Built", version.BUILD_DATE or "unknown"),
                 ("Up for", ago(version.STARTED)), ("Python", platform.python_version()),
                 ("Data folder", c.DATA_DIR), ("Web port", c.WEB_PORT), ("Dry run", "on" if c.DRY_RUN else "off")]
-        return render_template("status.html", info=info, jobs=jobs_, blocked=blocked,
+        return render_template("status.html", info=info, jobs=r["jobs"], blocked=blocked, health=r,
                                channels=[("Discord webhook", c.DISCORD_ON), ("Discord bot", bool(c.DISCORD_BOT_TOKEN)),
                                          ("Pushover", c.PUSHOVER_ON), ("SMS (Twilio)", c.SMS_ON)])
 

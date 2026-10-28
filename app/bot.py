@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 
 from . import config as c
+from . import health
 from . import jobs
 from . import notify as notify_mod
 from .store import state
@@ -330,6 +331,36 @@ async def cvr_asset_cmd(interaction: discord.Interaction, ticker: str, action: a
     await interaction.response.send_message(f"Updated `{sym}`.", embed=cvr_embed(state.cvr_get(sym)))
 
 
+# ------------------------------------------------------------- health
+STATUS_COLORS = {"ok": 0x2ECC71, "warn": 0xF1C40F, "error": 0xE74C3C}
+PRESENCE = {"ok": discord.Status.online, "warn": discord.Status.idle, "error": discord.Status.dnd}
+
+
+def status_embed(r):
+    title = {"ok": "🟢 Running normally", "warn": "🟡 Running, needs attention", "error": "🔴 Setup needed"}[r["status"]]
+    e = discord.Embed(title=title, color=STATUS_COLORS[r["status"]])
+    if r["problems"]:
+        e.description = "\n".join(f"• {p}" for p in r["problems"][:8])[:2000]
+    e.add_field(name="Up for", value=r["uptime"])
+    e.add_field(name="Watching", value=f"{r['tickers']} tickers · {r['cvrs']} CVRs")
+    e.add_field(name="Alerts (24h)", value=f"{r['alerts_24h']} · last {r['last_alert']}")
+    lines = [f"{'✅' if not j['error'] else '⚠️'} **{j['name']}** every {j['every']}s · ran {j['last_run']}"
+             if j["on"] else f"⏸️ **{j['name']}** off" for j in r["jobs"]]
+    e.add_field(name="Checks", value="\n".join(lines)[:1024], inline=False)
+    e.add_field(name="Channels", value=" · ".join(f"{'🟢' if on else '⚪'} {n}" for n, on in r["channels"]), inline=False)
+    if r["blocked"]:
+        e.add_field(name="Sites refusing access", value=", ".join(r["blocked"])[:1024], inline=False)
+    e.set_footer(text=f"build {r['version']} · web page on port {c.WEB_PORT}")
+    return e
+
+
+@app_commands.command(name="status", description="Is Stock Alerts running? Health of every check")
+@app_commands.guild_only()
+async def status_cmd(interaction: discord.Interaction):
+    r = await asyncio.to_thread(health.report)
+    await interaction.response.send_message(embed=status_embed(r))
+
+
 class WatchBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents(guilds=True))
@@ -338,14 +369,31 @@ class WatchBot(discord.Client):
     async def setup_hook(self):
         if c.DISCORD_GUILD_ID:
             guild = discord.Object(id=int(c.DISCORD_GUILD_ID))
-            self.tree.add_command(group, guild=guild)
-            self.tree.add_command(cvr_group, guild=guild)
+            for cmd in (group, cvr_group, status_cmd):
+                self.tree.add_command(cmd, guild=guild)
             await self.tree.sync(guild=guild)
         else:
-            self.tree.add_command(group)
-            self.tree.add_command(cvr_group)
+            for cmd in (group, cvr_group, status_cmd):
+                self.tree.add_command(cmd)
             await self.tree.sync()
         log.info("Slash commands synced")
+        self.loop.create_task(self.presence_loop())
+
+    async def presence_loop(self):
+        """Live heartbeat: the bot's dot (green/yellow/red) and status line, refreshed every minute.
+        If the app stops, Discord shows the bot offline."""
+        await self.wait_until_ready()
+        last = None
+        while not self.is_closed():
+            try:
+                r = await asyncio.to_thread(health.report)
+                now = (r["status"], health.status_line(r))
+                if now != last:
+                    await self.change_presence(status=PRESENCE[r["status"]], activity=discord.CustomActivity(name=now[1]))
+                    last = now
+            except Exception:
+                log.exception("couldn't update the bot's status")
+            await asyncio.sleep(60)
 
     async def on_ready(self):
         log.info("Discord bot connected as %s", self.user)

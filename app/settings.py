@@ -66,6 +66,8 @@ SCHEMA = [
     ("EARNINGS_REMINDERS", "Alerts", "str", "1d,0d", "Days before earnings to remind. 1d,0d = day before and day of."),
     ("EARNINGS_REMIND_HOUR_ET", "Alerts", "int", "6", "Hour (Eastern) to send earnings reminders."),
     ("DRY_RUN", "Alerts", "bool", "false", "Log alerts instead of sending them."),
+    ("HEARTBEAT_HOUR_ET", "Alerts", "int", "", "Optional: hour (0-23, Eastern) to post a daily \"still running\" "
+                                               "message. Blank = off; the Discord bot's status already shows health live."),
 
     ("ENABLE_PRICES", "Jobs", "bool", "true", ""),
     ("PRICE_INTERVAL", "Jobs", "int", "60", "Seconds."),
