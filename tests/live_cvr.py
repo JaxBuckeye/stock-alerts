@@ -1,4 +1,6 @@
-"""Live check against the real SEC site: python -m tests.live_cvr (TICKER env var, default CYCN)."""
+"""Live check against the real SEC site, run on a dev machine (the SEC blocks GitHub runners):
+    TICKER=CYCN python -m tests.live_cvr
+"""
 import json
 import os
 import sys

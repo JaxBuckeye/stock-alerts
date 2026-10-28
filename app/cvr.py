@@ -59,7 +59,9 @@ PAYMENT_RE = re.compile(r"(?:\bCVRs?\b|contingent value rights?)\W+(?:\w+\W+){0,
                         r"(?:payment|paid|payable|distribut|milestone|proceeds)", re.I)
 CVR_ANCHORS = re.compile(r"\bCVRs?\b|contingent value|legacy assets?", re.I)
 OBLIGOR_FORMS = {"8-K", "8-K/A", "10-Q", "10-K", "10-K/A", "6-K", "20-F", "40-F", "425", "SC TO-T", "SC TO-T/A", "SC 14D9"}
-SEARCH_FORMS = "8-K,8-K/A,10-Q,10-K,6-K,20-F,40-F,S-1,S-1/A,F-1,F-1/A,424B4,424B1,425,DEF 14A,SC TO-T,SC 14D9"
+# SEC full-text search returns nothing at all if the forms filter contains an amended type like "8-K/A"
+SEARCH_FORMS = "8-K,10-Q,10-K,6-K,20-F,40-F,S-1,F-1,424B4,424B1,425,DEF 14A,SC TO-T,SC 14D9"
+PROSPECTUS_FORMS = "424B3,DEFM14A,SC 14D9,SC TO-T,S-4,PREM14A,DEFA14A"
 PROSPECTUS_ORDER = ["424B3", "DEFM14A", "SC 14D9", "SC TO-T", "S-4/A", "S-4", "PREM14A", "DEFA14A", "8-K"]
 
 
@@ -223,11 +225,21 @@ def score_assets(text, candidates, anchor_names, other_names, window=400):
 
 
 def cvr_summary(text):
-    for sent in re.split(r"(?<=[.;])\s+", text):
-        if 60 < len(sent) < 700 and CVR_WORDS.search(sent) and re.search(r"receive|entitle", sent, re.I) and \
-                re.search(r"proceeds|milestone|payment|cash", sent, re.I):
-            return sent.strip()
-    return ""
+    """The sentence that best says what a CVR holder is entitled to."""
+    best, best_score = "", 0
+    for sent in re.split(r"(?<=[.;])\s+", text[:3_000_000]):
+        if not (60 < len(sent) < 700 and CVR_WORDS.search(sent)):
+            continue
+        score = (3 * bool(re.search(r"entitle|right to receive", sent, re.I))
+                 + 2 * bool(re.search(r"proceeds|milestone|payment|cash", sent, re.I))
+                 + bool(re.search(r"\beach\b", sent, re.I))
+                 + bool(re.search(r"legacy asset|license|sale|disposition", sent, re.I))
+                 - 4 * bool(re.search(r"not receive|no such|may not|risk|uncertain", sent, re.I)))
+        if score > best_score:
+            best, best_score = sent.strip(), score
+            if score >= 7:
+                break
+    return best
 
 
 def display_asset(name):
@@ -282,7 +294,7 @@ def find_agreement(cik, name):
 
 
 def find_prospectus(cik):
-    hits = fts('"contingent value"', ciks=cik, forms="424B3,DEFM14A,SC 14D9,SC TO-T,S-4,S-4/A,PREM14A,DEFA14A")
+    hits = fts('"contingent value"', ciks=cik, forms=PROSPECTUS_FORMS)
     rank = {f: i for i, f in enumerate(PROSPECTUS_ORDER)}
     hits.sort(key=lambda h: (rank.get(h["form"], 99), -int((h["date"] or "0").replace("-", "") or 0)))
     return hits[0] if hits else None
@@ -305,11 +317,16 @@ def discover(sym):
                     key_terms=[], summary="")
         info["notes"].append("No CVR agreement found in SEC full-text search. Add the asset names yourself.")
         return info
-    # the issuer's name in the deal: whichever of its names (current or former) the agreement uses most
-    names = [current] + [f.get("name", "") for f in sub.get("formerNames") or []]
-    best = max((n for n in names if short(n)), key=lambda n: text.lower().count(short(n).lower()), default=tname)
-    if text.lower().count(short(best).lower()) > text.lower().count(short(tname).lower()):
-        tname = best
+    # the issuer's name in the deal: the agreement's signing party if that's one of its names (a reverse merger,
+    # e.g. Cyclerion now Korsana), else its current name if the agreement uses it (it was acquired), else the
+    # latest former name
+    names = [n for n in [current] + [f.get("name", "") for f in sub.get("formerNames") or []] if short(n)]
+    signer = parse_obligor(text)
+    match = next((n for n in names if same_company(n, signer)), None)
+    if match:
+        tname = match
+    elif current and short(current).lower() in text.lower():
+        tname = current
     info["name"], info["current_name"] = tname, current if current != tname else ""
     info["agreement"] = {"url": hit["url"], "date": hit["date"], "form": hit["form"], "executed": executed}
     if not executed:
@@ -592,3 +609,14 @@ def check_cvrs():
                 fn(cvr)
             except Exception:
                 log.exception("CVR %s: %s failed", cvr["sym"], fn.__name__)
+
+
+if __name__ == "__main__":
+    # Preview a lookup without saving it: docker exec stock-alerts python -m app.cvr CYCN
+    import json
+    import sys
+
+    for arg in sys.argv[1:] or ["CYCN"]:
+        found = discover(arg)
+        print(json.dumps({k: found.get(k) for k in ("name", "current_name", "obligor", "assets", "companies",
+                                                    "counterparties", "summary", "agreement", "notes")}, indent=2))

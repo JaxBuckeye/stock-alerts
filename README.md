@@ -47,7 +47,7 @@ Then every 30 minutes it alerts (kind `cvr`, posted to a `#cycn` channel if you 
 `/cvr asset` or on the web page. The first check of any new term records what already exists, quietly.
 
 Discord: `/cvr add`, `/cvr remove`, `/cvr list`, `/cvr info TICKER`, `/cvr asset TICKER add|remove NAME [asset|company]`.
-The **Live CVR lookup** GitHub Action runs a lookup against the real SEC site to preview what `/cvr add` will find.
+Preview a lookup without saving it: `docker exec stock-alerts python -m app.cvr CYCN`.
 
 ## Discord commands
 - `/watch add AAPL, TSLA NVDA` – validates tickers, adds them, replies with the full list

@@ -90,6 +90,11 @@ class Relevance(unittest.TestCase):
         self.assertIn('"Akebia" "Cyclerion"', q)
         self.assertNotIn('"Akebia"', q)  # alone it would match every Akebia filing
 
+    def test_search_form_filters_have_no_amended_types(self):
+        # EDGAR full-text search silently returns zero hits when the forms filter includes e.g. "8-K/A"
+        self.assertNotIn("/", cvr.SEARCH_FORMS)
+        self.assertNotIn("/", cvr.PROSPECTUS_FORMS)
+
     def test_display_names(self):
         self.assertEqual(cvr.parse_display_name("Akebia Therapeutics, Inc.  (AKBA)  (CIK 0001517022)"),
                          ("Akebia Therapeutics, Inc.", "AKBA", "0001517022"))
