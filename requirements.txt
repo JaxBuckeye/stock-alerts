@@ -1,3 +1,5 @@
 requests==2.32.3
 tzdata==2024.2
 discord.py==2.4.0
+flask==3.1.0
+waitress==3.0.2

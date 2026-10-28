@@ -10,6 +10,7 @@ COPY app ./app
 RUN useradd -m -u 1000 bot && mkdir /data && chown bot:bot /data
 USER bot
 VOLUME /data
+EXPOSE 8080
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s \
   CMD python -c "import os,sys,time; sys.exit(0 if time.time()-os.path.getmtime('/data/heartbeat')<180 else 1)"

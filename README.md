@@ -13,6 +13,41 @@ Alerts for every ticker on a shared watchlist that people manage from Discord.
 | Earnings reminders (day before and day of) | Finnhub earnings calendar | 30 min |
 | Investor calls / events (detected in headlines and press releases) | news + company sites | with news/sites |
 | New press releases on the company's own website | auto-discovered newsroom or RSS | 15 min |
+| CVRs: news and filings about the assets a CVR pays on, and CVR payment announcements | SEC EDGAR + Google News | 30 min |
+
+## Web page (settings and CVRs)
+Open `http://<server>:8080`. On the very first visit you create the login: the page asks for a one-time **setup code**,
+printed in the container logs (`First-time setup: ... enter setup code XXXXXXXX`), then you pick a username and password.
+
+- **Settings** lists every option from `.env`, grouped. A value saved here wins over `.env`; each one shows whether it's
+  *set here*, *from .env* or the *default*. **Copy from .env** moves everything at once, after which `.env` can be emptied.
+  Saving restarts the app (a few seconds). Secrets are never shown; leave a secret blank to keep it.
+- **CVRs** lists tracked CVRs with what was found, and lets you add one or edit its search terms.
+- Passwords are stored hashed; 5 wrong passwords lock logins from that address for 5 minutes. Keep port 8080 on your
+  LAN (don't forward it to the internet) since the page is plain HTTP.
+- Forgot the password? `docker exec stock-alerts python -m app.reset_login` prints a new setup code (settings are kept).
+
+## CVRs
+`/cvr add CYCN` (or **Add CVR** on the web page) takes the ticker of the company that *issued* the CVR, even if it's
+delisted or renamed. The lookup:
+1. finds the company at the SEC by its current or former ticker (CYCN is now Korsana Biosciences, KRSA),
+2. finds the CVR agreement with SEC full-text search, and from it who owes the payments, the payment/milestone
+   definitions, and the companies the assets were sold or licensed to (for CYCN: Akebia and Tisento),
+3. reads the merger prospectus for drug/program names, keeping only those discussed next to the CVR or its
+   counterparties (for CYCN: praliciguat, zagociguat, CY3018, olinciguat), not the acquirer's own pipeline.
+
+Then every 30 minutes it alerts (kind `cvr`, posted to a `#cycn` channel if you have one) on:
+- the obligor's SEC filings **only** when they mention an asset, a counterparty or a CVR payment; its other 8-Ks are ignored,
+- any company's SEC filings that mention an asset (licensees, buyers, a spin-out's IPO). Companies outside the deal need
+  at least two mentions, so a passing mention in an executive's bio doesn't alert,
+- Google News stories that mention an asset, or the issuer together with "CVR".
+
+**Assets** are searched on their own. **Companies** are only searched together with the issuer's name
+(`"Akebia" "Cyclerion"`), since a company name alone would match all of that company's news. Edit either list with
+`/cvr asset` or on the web page. The first check of any new term records what already exists, quietly.
+
+Discord: `/cvr add`, `/cvr remove`, `/cvr list`, `/cvr info TICKER`, `/cvr asset TICKER add|remove NAME [asset|company]`.
+The **Live CVR lookup** GitHub Action runs a lookup against the real SEC site to preview what `/cvr add` will find.
 
 ## Discord commands
 - `/watch add AAPL, TSLA NVDA` – validates tickers, adds them, replies with the full list
@@ -38,11 +73,12 @@ By default alerts also still go to your general channel; set `DISCORD_TICKER_ONL
 ## Deploy
 GitHub Actions builds the image on every push to `main` and publishes it to `ghcr.io/jaxbuckeye/stock-alerts:latest`.
 
-1. `cp .env.example .env` and fill it in.
-2. `docker compose pull && docker compose up -d`
-3. `docker compose logs -f`
+1. `docker compose pull && docker compose up -d` (publish port 8080 for the web page)
+2. `docker compose logs -f`, copy the setup code, open `http://<server>:8080` and create your login.
+3. Fill in the settings on the web page (or in `.env`, see `.env.example`).
 
-To update after pushing new code: wait for the GitHub Action to finish, then run step 2 again.
+To update after pushing new code: wait for the GitHub Action to finish, then run step 1 again.
+If required settings are missing the app doesn't exit: the web page runs and alerts are paused until they're filled in.
 State lives in the `/data` volume; the container user must be able to write to it.
 
 ## Notes

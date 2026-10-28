@@ -1,0 +1,31 @@
+name: Live CVR lookup
+
+# Run by hand (Actions tab > Live CVR lookup > Run workflow) to see what /cvr add finds for a ticker,
+# using the real SEC website. Not part of the image build.
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: Ticker of the company that issued the CVR
+        default: CYCN
+
+permissions:
+  contents: read
+
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Discover
+        env:
+          DATA_DIR: /tmp/cvr-live
+          FINNHUB_API_KEY: unused
+          SEC_USER_AGENT: "stock-alerts-ci 173743444+JaxBuckeye@users.noreply.github.com"
+          DISCORD_WEBHOOK_URL: https://example.invalid/hook
+          TICKER: ${{ inputs.ticker }}
+        run: python -m tests.live_cvr

@@ -1,4 +1,5 @@
 """SQLite state: dedupe keys, the watchlist, and monitored company websites."""
+import json
 import os
 import sqlite3
 import threading
@@ -10,7 +11,7 @@ from .config import DATA_DIR
 class State:
     def __init__(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        self.db = sqlite3.connect(path, check_same_thread=False)
+        self.db = sqlite3.connect(path, check_same_thread=False, timeout=15)  # web page also writes this file
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         with self.lock:
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS seen (key TEXT PRIMARY KEY, ts INTEGER);
 CREATE TABLE IF NOT EXISTS watchlist (sym TEXT PRIMARY KEY, name TEXT, added_by TEXT, added_ts INTEGER);
 CREATE TABLE IF NOT EXISTS sites (sym TEXT PRIMARY KEY, homepage TEXT, news_url TEXT,
                                   feed_url TEXT, manual INTEGER DEFAULT 0, checked_ts INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS cvrs (sym TEXT PRIMARY KEY, data TEXT, added_by TEXT, added_ts INTEGER);
 """)
             self.db.commit()
 
@@ -37,7 +39,10 @@ CREATE TABLE IF NOT EXISTS sites (sym TEXT PRIMARY KEY, homepage TEXT, news_url 
         self._run("INSERT OR IGNORE INTO seen VALUES (?,?)", (key, int(time.time())))
 
     def prune(self, days=30):
-        self._run("DELETE FROM seen WHERE ts < ? AND key NOT LIKE 'seeded:%'", (int(time.time()) - days * 86400,))
+        # SEC filing lists and company sites keep old items listed for years, so their keys must never be
+        # pruned or those items would alert again as "new". Everything else is dated or age-filtered.
+        self._run("DELETE FROM seen WHERE ts < ? AND key NOT LIKE 'seeded:%' AND key NOT LIKE 'filing:%' "
+                  "AND key NOT LIKE 'cvrfile:%' AND key NOT LIKE 'site:%'", (int(time.time()) - days * 86400,))
 
     # --- watchlist
     def tickers(self):
@@ -76,6 +81,26 @@ CREATE TABLE IF NOT EXISTS sites (sym TEXT PRIMARY KEY, homepage TEXT, news_url 
                                      "feed_url": None, "manual": 0, "checked_ts": 0}
         row.update(fields)
         self._run("INSERT OR REPLACE INTO sites VALUES (:sym,:homepage,:news_url,:feed_url,:manual,:checked_ts)", row)
+
+    # --- CVRs (data is a JSON dict built by app.cvr.discover)
+    def cvr_list(self):
+        with self.lock:
+            rows = self.db.execute("SELECT sym, data, added_by, added_ts FROM cvrs ORDER BY sym").fetchall()
+        return [dict(json.loads(r["data"]), sym=r["sym"], added_by=r["added_by"], added_ts=r["added_ts"]) for r in rows]
+
+    def cvr_get(self, sym):
+        with self.lock:
+            r = self.db.execute("SELECT data, added_by, added_ts FROM cvrs WHERE sym=?", (sym,)).fetchone()
+        return dict(json.loads(r["data"]), sym=sym, added_by=r["added_by"], added_ts=r["added_ts"]) if r else None
+
+    def cvr_put(self, sym, data, who=None):
+        old = self.cvr_get(sym)
+        data = {k: v for k, v in data.items() if k not in ("sym", "added_by", "added_ts")}
+        self._run("INSERT OR REPLACE INTO cvrs VALUES (?,?,?,?)",
+                  (sym, json.dumps(data), (old or {}).get("added_by") or who, (old or {}).get("added_ts") or int(time.time())))
+
+    def cvr_remove(self, sym):
+        return self._run("DELETE FROM cvrs WHERE sym=?", (sym,)).rowcount > 0
 
 
 state = State(os.path.join(DATA_DIR, "state.db"))

@@ -6,7 +6,12 @@ services:
     pull_policy: always
     container_name: stock-alerts
     restart: unless-stopped
-    env_file: .env
+    # Settings can live on the web page instead; .env is optional once they're copied there.
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8080:8080"   # settings web page: http://<server>:8080
     volumes:
       - alerts-data:/data
 

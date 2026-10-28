@@ -219,6 +219,117 @@ async def site_cmd(interaction: discord.Interaction, ticker: str, url: str = Non
         await interaction.response.send_message("URL must start with http:// or https:// (or use `auto`).", ephemeral=True)
 
 
+# --------------------------------------------------------------- CVRs
+cvr_group = app_commands.Group(name="cvr", description="Track contingent value rights (CVRs)", guild_only=True)
+
+
+def cvr_embed(x):
+    ob = x.get("obligor") or {}
+    e = discord.Embed(title=f"{x['sym']} CVR · {x.get('name', '')}"[:256], color=notify_mod.COLORS["cvr"],
+                      url=(x.get("agreement") or {}).get("url"))
+    if x.get("summary"):
+        e.description = x["summary"][:1500]
+    e.add_field(name="Pays out from", value=(f"{ob.get('name') or 'unknown'}" +
+                                            (f" ({ob['ticker']})" if ob.get("ticker") else ""))[:1024], inline=False)
+    e.add_field(name="Assets (searched on their own)",
+                value=", ".join(x.get("assets") or []) or "_none found_", inline=False)
+    e.add_field(name="Companies (searched with the issuer's name)",
+                value=", ".join(x.get("companies") or []) or "_none_", inline=False)
+    if x.get("key_terms"):
+        e.add_field(name="Key terms", value="\n".join(f"**{t['term']}**: {t['text'][:150]}" for t in x["key_terms"][:4])[:1024],
+                    inline=False)
+    for n in x.get("notes") or []:
+        e.add_field(name="Note", value=n[:1024], inline=False)
+    e.set_footer(text=f"Edit with /cvr asset or on the web page (port {c.WEB_PORT})")
+    return e
+
+
+def cvr_list_embed():
+    rows = state.cvr_list()
+    lines = [f"`{x['sym']}` {x.get('name', '')} → {', '.join((x.get('assets') or []) + (x.get('companies') or []))[:200]}"
+             for x in rows]
+    return discord.Embed(title=f"Tracked CVRs ({len(rows)})", description="\n".join(lines)[:4000] or "_None yet._",
+                         color=notify_mod.COLORS["cvr"])
+
+
+@cvr_group.command(name="add", description="Track the CVR issued by a company (it can be delisted or renamed)")
+@app_commands.describe(ticker="Ticker of the company that issued the CVR, e.g. CYCN")
+async def cvr_add_cmd(interaction: discord.Interaction, ticker: str):
+    if not await allowed(interaction):
+        return
+    syms = parse_symbols(ticker)
+    if not syms:
+        await interaction.response.send_message("That doesn't look like a ticker.", ephemeral=True)
+        return
+    sym = syms[0]
+    if state.cvr_get(sym):
+        await interaction.response.send_message(f"`{sym}` is already tracked.", embed=cvr_embed(state.cvr_get(sym)))
+        return
+    await interaction.response.defer()
+    from . import cvr
+    try:
+        info = await asyncio.to_thread(cvr.add, sym, str(interaction.user))
+    except LookupError as e:
+        await interaction.followup.send(f"❌ {e}")
+        return
+    except Exception as e:
+        log.exception("CVR discovery failed for %s", sym)
+        await interaction.followup.send(f"⚠️ Couldn't look up `{sym}` right now: {e}")
+        return
+    await interaction.followup.send(f"✅ Tracking the `{sym}` CVR (added by {interaction.user.display_name}). "
+                                    "Existing filings and news are recorded quietly; only new ones alert.",
+                                    embed=cvr_embed(info))
+
+
+@cvr_group.command(name="remove", description="Stop tracking a CVR")
+async def cvr_remove_cmd(interaction: discord.Interaction, ticker: str):
+    if not await allowed(interaction):
+        return
+    sym = c.norm(ticker)
+    ok = await asyncio.to_thread(state.cvr_remove, sym)
+    await interaction.response.send_message(f"🗑️ Stopped tracking the `{sym}` CVR." if ok else f"`{sym}` wasn't tracked.",
+                                            embed=cvr_list_embed())
+
+
+@cvr_group.command(name="list", description="Show tracked CVRs")
+async def cvr_list_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=cvr_list_embed())
+
+
+@cvr_group.command(name="info", description="Show what a CVR pays on and what's being watched")
+async def cvr_info_cmd(interaction: discord.Interaction, ticker: str):
+    x = state.cvr_get(c.norm(ticker))
+    if not x:
+        await interaction.response.send_message(f"`{c.norm(ticker)}` isn't tracked. Use `/cvr add` first.", ephemeral=True)
+        return
+    await interaction.response.send_message(embed=cvr_embed(x))
+
+
+@cvr_group.command(name="asset", description="Add or remove a search term for a CVR")
+@app_commands.describe(ticker="CVR ticker", action="add or remove", name="Drug/program name, or a buyer/licensee company",
+                       kind="asset = searched on its own; company = searched together with the issuer's name")
+@app_commands.choices(action=[app_commands.Choice(name="add", value="add"), app_commands.Choice(name="remove", value="remove")],
+                      kind=[app_commands.Choice(name="asset", value="assets"), app_commands.Choice(name="company", value="companies")])
+async def cvr_asset_cmd(interaction: discord.Interaction, ticker: str, action: app_commands.Choice[str], name: str,
+                        kind: app_commands.Choice[str] = None):
+    if not await allowed(interaction):
+        return
+    sym = c.norm(ticker)
+    x = state.cvr_get(sym)
+    if not x:
+        await interaction.response.send_message(f"`{sym}` isn't tracked. Use `/cvr add` first.", ephemeral=True)
+        return
+    field, name = (kind.value if kind else "assets"), name.strip()
+    if action.value == "add":
+        if name not in (x.get(field) or []):
+            x[field] = (x.get(field) or []) + [name]
+    else:
+        for f in ("assets", "companies"):
+            x[f] = [t for t in x.get(f) or [] if t.lower() != name.lower()]
+    await asyncio.to_thread(state.cvr_put, sym, x)
+    await interaction.response.send_message(f"Updated `{sym}`.", embed=cvr_embed(state.cvr_get(sym)))
+
+
 class WatchBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents(guilds=True))
@@ -228,9 +339,11 @@ class WatchBot(discord.Client):
         if c.DISCORD_GUILD_ID:
             guild = discord.Object(id=int(c.DISCORD_GUILD_ID))
             self.tree.add_command(group, guild=guild)
+            self.tree.add_command(cvr_group, guild=guild)
             await self.tree.sync(guild=guild)
         else:
             self.tree.add_command(group)
+            self.tree.add_command(cvr_group)
             await self.tree.sync()
         log.info("Slash commands synced")
 

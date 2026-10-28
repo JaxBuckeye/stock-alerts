@@ -11,7 +11,7 @@ from .clients import http
 log = logging.getLogger("notify")
 ticker_poster = None  # installed by app.bot.start(): fn(sym, title, message, url, kind, priority) -> True/False/None
 COLORS = {"halt": 0xE74C3C, "move": 0xF39C12, "news": 0x3498DB, "filing": 0x9B59B6,
-          "insider": 0xE67E22, "stake": 0x8E44AD,
+          "insider": 0xE67E22, "stake": 0x8E44AD, "cvr": 0x16A085,
           "earnings": 0x2ECC71, "call": 0xF1C40F, "site": 0x1ABC9C, "system": 0x95A5A6}
 
 
