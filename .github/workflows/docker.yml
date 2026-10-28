@@ -72,7 +72,7 @@ jobs:
           docker logs smoke 2>&1 | grep -q "First-time setup: open http://<this-server>:8080 and enter setup code"
           curl -fsS http://localhost:8080/health
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/)" = 302   # -> /setup
-          curl -fsS http://localhost:8080/setup | grep -q "Create your login"
+          curl -fsS http://localhost:8080/setup | grep -q "Summon your login"
           docker rm -f smoke
           # Discord bot module and discord.py import cleanly
           docker run --rm $COMMON -e DISCORD_WEBHOOK_URL=https://example.invalid/hook \
