@@ -57,6 +57,18 @@ BORING_DEFS = {"holder", "holders", "rights agent", "business day", "code", "not
 CVR_WORDS = re.compile(r"\bCVRs?\b|contingent value rights?", re.I)
 PAYMENT_RE = re.compile(r"(?:\bCVRs?\b|contingent value rights?)\W+(?:\w+\W+){0,25}?"
                         r"(?:payment|paid|payable|distribut|milestone|proceeds)", re.I)
+# Payment news (a payment is happening) vs. a filing that only describes what CVRs could pay.
+# Both are judged on each sentence that mentions a CVR.
+CVR_WORD_RE = re.compile(r"\bCVRs?\b|contingent value rights?", re.I)
+PAY_EVENT_RE = re.compile(r"\b(?:achieved|triggered|satisfied|declared|record date|"
+                          r"will (?:make|pay|receive|distribute|be (?:paid|distributed|made))|"
+                          r"(?:has|have) (?:been )?(?:paid|distributed|made|received)|(?:paid|distributed) to)\b|"
+                          r"\$\s?\d[\d,.]*\s+per\s+CVR", re.I)
+PAY_HYPOTHETICAL_RE = re.compile(r"\b(?:would|could|may|might|if|potential(?:ly)?|up to|right to receive|"
+                                 r"entitle[sd]?|contingent upon|subject to|no assurance|speculative|"
+                                 r"upon (?:the )?achievement|shall|unless|until)\b", re.I)
+PAY_MONEY_RE = re.compile(r"\$|\b(?:pay|paid|payments?|proceeds|cash|distributions?)\b", re.I)
+SENTENCE_END = re.compile(r"(?<=[.;!?])\s+(?=[A-Z(\"])|\n")
 CVR_ANCHORS = re.compile(r"\bCVRs?\b|contingent value|legacy assets?", re.I)
 OBLIGOR_FORMS = {"8-K", "8-K/A", "10-Q", "10-K", "10-K/A", "6-K", "20-F", "40-F", "425", "SC TO-T", "SC TO-T/A", "SC 14D9"}
 # SEC full-text search returns nothing at all if the forms filter contains an amended type like "8-K/A"
@@ -429,14 +441,33 @@ def snippet(text, word, width=220):
     return ("..." if a else "") + text[a:b].strip() + ("..." if b < len(text) else "")
 
 
+def _sentence(text, start, end, reach=600):
+    """The sentence around text[start:end] (capped at `reach` characters each way)."""
+    a = max((m.end() for m in SENTENCE_END.finditer(text, max(0, start - reach), start)), default=max(0, start - reach))
+    b = SENTENCE_END.search(text, end, min(len(text), end + reach))
+    return text[a:b.start() if b else min(len(text), end + reach)]
+
+
+def payment_news(text):
+    """True if some sentence about CVRs reports an actual payment, not just what CVRs could pay."""
+    for m in CVR_WORD_RE.finditer(text):
+        s = _sentence(text, m.start(), m.end())
+        if PAY_EVENT_RE.search(s) and PAY_MONEY_RE.search(s) and not PAY_HYPOTHETICAL_RE.search(s):
+            return True
+    return False
+
+
 def relevance(text, terms):
-    """(is_relevant, matched words, is_payment_news, snippet) for a filing's text."""
+    """(is_relevant, matched words, is_payment_news, snippet) for a filing's text.
+
+    A filing that names the assets/companies only once in total, with no CVR payment language,
+    is a passing mention (e.g. an executive's bio in a 10-K/A) and is not relevant."""
     found = find_terms(text, terms)
     pay = PAYMENT_RE.search(text)
-    if not found and not pay:
+    if not pay and sum(n for _, n in found) < 2:
         return False, [], False, ""
     focus = pay.group(0) if pay and not found else found[0][0]
-    return True, [t for t, _ in found] or ["CVR payment"], bool(pay), snippet(text, focus)
+    return True, [t for t, _ in found] or ["CVR payment"], bool(pay) and payment_news(text), snippet(text, focus)
 
 
 def filing_docs(cik, acc, primary):

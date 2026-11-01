@@ -84,6 +84,29 @@ class Relevance(unittest.TestCase):
         self.assertTrue(ok)
         self.assertTrue(pay)
 
+    def test_single_passing_mention_is_ignored(self):
+        bio = ("Dr. Jane Roe has served as our Chief Medical Officer since 2024. Previously she led clinical "
+               "development of praliciguat at a biotechnology company and holds an M.D. from Yale.")
+        ok, *_ = cvr.relevance(bio, cvr.terms(CYCN))
+        self.assertFalse(ok)
+
+    def test_cvr_description_is_not_payment_news(self):
+        text = ("In connection with the merger, each stockholder received one CVR. Each CVR entitles the holder to "
+                "receive a payment equal to 80% of net proceeds from praliciguat, if any. The CVRs may never "
+                "result in any payment. Praliciguat is licensed to Akebia.")
+        ok, words, pay, _ = cvr.relevance(text, cvr.terms(CYCN))
+        self.assertTrue(ok)  # still worth a normal alert
+        self.assertFalse(pay)
+
+    def test_real_cvr_agreement_is_not_payment_news(self):
+        self.assertFalse(cvr.payment_news(AGREEMENT))
+
+    def test_payment_news_amid_description(self):
+        text = ("Each CVR represents the right to receive a contingent payment of up to $1.00. "
+                "The milestone was achieved on October 1, and the Company will distribute $0.25 per CVR "
+                "to holders of record on November 15, 2026.")
+        self.assertTrue(cvr.relevance(text, [])[2])
+
     def test_company_terms_need_issuer_name_in_queries(self):
         q = dict(cvr.search_queries(CYCN))
         self.assertIn('"Praliciguat"', q)
