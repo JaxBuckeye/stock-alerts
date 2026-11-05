@@ -71,6 +71,8 @@ SCHEMA = [
 
     ("ENABLE_PRICES", "Jobs", "bool", "true", ""),
     ("PRICE_INTERVAL", "Jobs", "int", "60", "Seconds."),
+    ("ENABLE_EXTENDED", "Jobs", "bool", "true", "Premarket and after-hours price moves (prices from Yahoo)."),
+    ("EXTENDED_INTERVAL", "Jobs", "int", "120", "Seconds."),
     ("ENABLE_NEWS", "Jobs", "bool", "true", ""),
     ("NEWS_INTERVAL", "Jobs", "int", "300", "Seconds."),
     ("ENABLE_HALTS", "Jobs", "bool", "true", ""),

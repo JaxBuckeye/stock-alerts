@@ -121,6 +121,7 @@ CVR_NEWS_MAX_AGE_H = number("CVR_NEWS_MAX_AGE_HOURS", float)
 INTERVALS = {
     "halts": number("HALT_INTERVAL", int),
     "prices": number("PRICE_INTERVAL", int),
+    "extended": number("EXTENDED_INTERVAL", int),
     "news": number("NEWS_INTERVAL", int),
     "filings": number("FILING_INTERVAL", int),
     "earnings": number("EARNINGS_INTERVAL", int),

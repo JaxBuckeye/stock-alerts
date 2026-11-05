@@ -84,7 +84,8 @@ def main():
             time.sleep(5)
         return
     init_watchlist()
-    table = {"halts": jobs.check_halts, "prices": jobs.check_prices, "news": jobs.check_news,
+    table = {"halts": jobs.check_halts, "prices": jobs.check_prices, "extended": jobs.check_extended,
+             "news": jobs.check_news,
              "filings": jobs.check_filings, "earnings": jobs.check_earnings, "sites": jobs.check_sites,
              "cvr": cvr.check_cvrs}
     schedule = {n: 0.0 for n, on in c.ENABLED.items() if on}

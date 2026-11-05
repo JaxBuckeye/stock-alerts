@@ -104,6 +104,75 @@ def check_prices():
             log.exception("price check failed for %s", sym)
 
 
+# ------------------------------------------------------------------ premarket / after hours
+# Finnhub's free quote only covers the regular session, so moves outside it come from Yahoo's chart data.
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/"
+YAHOO_UA = "stock-alerts/1.0 (+https://github.com/JaxBuckeye/stock-alerts)"
+EXT_STALE_SECONDS = 1800  # ignore a session price older than this (thin trading)
+EXT_NAMES = {"pre": "premarket", "post": "after hours"}
+
+
+def extended_move(chart, now):
+    """(session, price, baseline, pct, price_time) if `now` is premarket or after hours, else None.
+
+    Baseline is the last regular-session close: yesterday's in premarket, today's after hours."""
+    meta = chart.get("meta") or {}
+    periods = meta.get("currentTradingPeriod") or {}
+    base = meta.get("regularMarketPrice")
+    for session in ("pre", "post"):
+        p = periods.get(session) or {}
+        if p.get("start") and p.get("end") and p["start"] <= now < p["end"]:
+            break
+    else:
+        return None
+    closes = ((chart.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
+    bars = [(t, px) for t, px in zip(chart.get("timestamp") or [], closes) if px and t >= p["start"]]
+    if not bars or not base:
+        return None
+    t, px = bars[-1]
+    if now - t > EXT_STALE_SECONDS:
+        return None
+    return session, px, base, (px - base) / base * 100, t
+
+
+def check_extended():
+    now = time.time()
+    blocked = False
+    for sym in state.tickers():
+        if blocked:
+            break
+        try:
+            r = http.get(YAHOO_CHART + sym, params={"interval": "5m", "range": "1d", "includePrePost": "true"},
+                         headers={"User-Agent": YAHOO_UA}, timeout=15)
+            if r.status_code in (401, 403, 429):
+                log.warning("Yahoo refused extended-hours prices (HTTP %s); trying again next cycle", r.status_code)
+                blocked = True
+                continue
+            r.raise_for_status()
+            result = ((r.json().get("chart") or {}).get("result") or [None])[0]
+            move = extended_move(result or {}, now)
+            if not move:
+                continue
+            session, px, base, dp, t = move
+            if abs(dp) < c.MOVE_PCT:
+                continue
+            day = datetime.fromtimestamp(t, ET_TZ).date()
+            bucket = int(abs(dp) // c.MOVE_PCT)
+            key = f"xmove:{sym}:{day}:{session}:{'up' if dp > 0 else 'down'}:{bucket}"
+            if state.has(key):
+                continue
+            label = EXT_NAMES[session]
+            ok = notify(f"{sym} {label} {'▲' if dp > 0 else '▼'} {dp:+.1f}%",
+                        f"{sym} is {px:.2f} {label} ({dp:+.2f}%) vs the last close {base:.2f}, "
+                        f"as of {datetime.fromtimestamp(t, ET_TZ):%I:%M %p} ET.",
+                        url=f"https://finance.yahoo.com/quote/{sym}", url_title="Quote",
+                        sound="cashregister" if dp > 0 else "falling", kind="move", sym=sym)
+            if ok:
+                state.mark(key)
+        except Exception:
+            log.exception("extended-hours price check failed for %s", sym)
+
+
 # ------------------------------------------------------------------ news
 def check_news():
     now = datetime.now(timezone.utc)
